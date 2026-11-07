@@ -19,7 +19,7 @@
 #include "freertos/semphr.h"
 #include "mqtt_client.h"
 
-#include "secrets.h"
+#include "app_secrets.h"
 
 static const char *TAG = "app_mqtt";
 

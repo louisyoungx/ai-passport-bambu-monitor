@@ -5,6 +5,8 @@ English | [简体中文](README.zh_CN.md)
 基于 [FoloToy AI Passport](https://github.com/FoloToy/ai-passport) 硬件（ESP32-C3）的可穿戴拓竹打印机监控固件。
 订阅拓竹云 MQTT 实时数据流，在 240×320 圆角屏上显示打印进度、温度、AMS 料槽和设备信息，无需掏出手机。
 
+现已增加 **ESP32-2432S028R CYD（双 USB）适配配置**：4 MB Flash、竖屏、XPT2046 触摸手势、BOOT 导航和 DAC 提示音。原 AI Passport 配置保留。构建方式、屏幕批次设置及待验证项目见 [CYD 开发说明](docs/CYD.md)。
+
 ## 功能
 
 - **实时进度**：状态、百分比、层数/喷嘴点数、已用/剩余时间

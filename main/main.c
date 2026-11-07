@@ -25,7 +25,14 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_pm.h"
+#include "soc/soc_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include <stdatomic.h>
+#if SOC_USB_SERIAL_JTAG_SUPPORTED
 #include "driver/usb_serial_jtag.h"
+#endif
 
 static const char *TAG = "main";
 
@@ -33,11 +40,15 @@ static const char *TAG = "main";
 static int64_t s_key_us;
 static bool    s_screen_off;
 static bool    s_swallow_key;
-static esp_timer_handle_t s_scr_timer;
+typedef struct { bsp_btn_t button; bsp_btn_ev_t event; } key_event_t;
+static QueueHandle_t s_key_queue;
+static atomic_bool s_booting = true;
 
 #if CONFIG_PM_ENABLE
+#if SOC_USB_SERIAL_JTAG_SUPPORTED
 static esp_pm_lock_handle_t s_usb_lock;
 static esp_timer_handle_t   s_usb_timer;
+#endif
 // 亮屏期间禁止 light sleep:LVGL 每 5ms 醒一次刷 SPI,睡眠/唤醒会打断刷新时序,
 // 画面上表现为明显闪烁。只有熄屏(画面已冻结)之后才放锁,让它真正睡下去。
 static esp_pm_lock_handle_t s_awake_lock;
@@ -47,6 +58,7 @@ static esp_pm_lock_handle_t s_awake_lock;
 // 睡下去主机就再也枚举不到,只能断电重来(本版就在这上面栽过一次)。所以自己持一把
 // NO_LIGHT_SLEEP 锁:启动先无条件持 5s 盖住重枚举窗口,之后每 5s 用
 // usb_serial_jtag_is_connected() 复查,连着就继续持,真断了(用电池)才放。
+#if SOC_USB_SERIAL_JTAG_SUPPORTED
 static void usb_guard_cb(void *arg)
 {
     (void)arg;
@@ -55,6 +67,7 @@ static void usb_guard_cb(void *arg)
     if (s_usb_timer) esp_timer_stop(s_usb_timer);    // 断线后没必要再复查
     ESP_LOGI(TAG, "USB 已断开,允许 light sleep");
 }
+#endif
 
 // 自动 light sleep + DFS(160↔80MHz)。
 static void pm_init(void)
@@ -72,21 +85,25 @@ static void pm_init(void)
     }
     ESP_LOGI(TAG, "PM 就绪: DFS 80~160MHz, 自动 light sleep 开");
 
-    esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "usb_guard", &s_usb_lock);
-    if (s_usb_lock) esp_pm_lock_acquire(s_usb_lock);
     esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "awake", &s_awake_lock);
     if (s_awake_lock) esp_pm_lock_acquire(s_awake_lock);
+#if SOC_USB_SERIAL_JTAG_SUPPORTED
+    esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "usb_guard", &s_usb_lock);
+    if (s_usb_lock) esp_pm_lock_acquire(s_usb_lock);
     const esp_timer_create_args_t a = { .name = "usb_guard", .callback = usb_guard_cb };
     if (esp_timer_create(&a, &s_usb_timer) == ESP_OK)
         esp_timer_start_periodic(s_usb_timer, 5ULL * 1000 * 1000);
 #endif
+#endif
 }
+#else
+static void pm_init(void) {}
 #endif
 
 static void screen_off_tick(void *arg)
 {
     (void)arg;
-    if (s_screen_off || app_provision_needed()) return;   // 配网页不熄屏
+    if (s_booting || s_screen_off || app_provision_needed()) return;
     if (esp_timer_get_time() - s_key_us < 30LL * 1000 * 1000) return;
     bsp_display_backlight(0);
     // 熄屏后停掉 LVGL 的 5ms tick 与全部 lv_timer,CPU 才有连续空闲进入 light sleep。
@@ -94,8 +111,7 @@ static void screen_off_tick(void *arg)
 #if CONFIG_PM_ENABLE
     if (s_awake_lock) esp_pm_lock_release(s_awake_lock);   // 画面已冻结,允许入睡
 #endif
-    // 已确认熄屏,不再需要每秒检查;下次按键唤醒时重启。
-    if (s_scr_timer) esp_timer_stop(s_scr_timer);
+    // Screen-off state is owned by the application input task.
     s_screen_off = true;
     ESP_LOGI(TAG, "空闲 30s,熄屏");
 }
@@ -103,11 +119,6 @@ static void screen_off_tick(void *arg)
 static void screen_off_init(void)
 {
     s_key_us = esp_timer_get_time();
-    const esp_timer_create_args_t a = {
-        .name = "scr_off", .callback = screen_off_tick, .arg = NULL,
-    };
-    if (esp_timer_create(&a, &s_scr_timer) == ESP_OK)
-        esp_timer_start_periodic(s_scr_timer, 1000ULL * 1000);
 }
 
 // true = 这次按键只用于唤醒,不再往下处理。
@@ -122,7 +133,6 @@ static bool screen_off_on_key(bsp_btn_ev_t ev)
         // 先恢复 LVGL(tick + 定时器,并整屏失效),再开背光,避免亮起一帧陈旧画面。
         bsp_lvgl_set_suspended(false);
         bsp_display_backlight(100);
-        if (s_scr_timer) esp_timer_start_periodic(s_scr_timer, 1000ULL * 1000);
         ESP_LOGI(TAG, "按键唤醒,亮屏");
         if (ev != BSP_BTN_RELEASE) s_swallow_key = true;
         return true;
@@ -162,7 +172,16 @@ static void menu_refresh(void) {
 }
 
 static void menu_build(void) {
+#if CONFIG_BSP_BOARD_CYD
+    s_menu_scr = ui_pixel_screen_create("CYD");
+    lv_obj_t *hint = ui_pixel_label(s_menu_scr, "Swipe / Tap OK / Hold back",
+                                   &lv_font_montserrat_14, UI_INK);
+    lv_obj_set_width(hint, 230);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_obj_set_pos(hint, 5, 47);
+#else
     s_menu_scr = ui_pixel_screen_create("AI 通行证");
+#endif
 
     for (size_t i = 0; i < DEMO_COUNT; i++) {
         int cy = 140 - (int)(DEMO_COUNT - 1) * 35 + (int)i * 70;   // 多项时竖排居中
@@ -184,9 +203,9 @@ static void enter_menu(void) {
     menu_build();
 }
 
-// 按键回调运行在 button 组件的任务里,操作 LVGL 必须加锁。
-static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
-    (void)user;
+// The application input task owns navigation and screen-off state.
+static void dispatch_key(bsp_btn_t btn, bsp_btn_ev_t ev) {
+    if (s_booting) return;
     if (screen_off_on_key(ev)) return;
     if (!bsp_lvgl_lock(500)) return;
 
@@ -221,8 +240,28 @@ static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
     bsp_lvgl_unlock();
 }
 
+static void on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
+    (void)user;
+    const key_event_t key = { .button = btn, .event = ev };
+    // Passport callbacks run on the shared esp_timer task. Never block it on
+    // LVGL, page construction, or network work. CYD uses the same queue.
+    if (xQueueSend(s_key_queue, &key, 0) != pdTRUE)
+        ESP_LOGW(TAG, "Input queue full; event dropped");
+}
+
+static void input_task(void *arg) {
+    (void)arg;
+    key_event_t key;
+    for (;;) {
+        if (xQueueReceive(s_key_queue, &key, pdMS_TO_TICKS(250)) == pdTRUE)
+            dispatch_key(key.button, key.event);
+        screen_off_tick(NULL);
+    }
+}
+
 // 开机动画结束回调(此时已持 LVGL 锁):未配网→配网模式;已配置→联网直达打印机屏
 static void boot_done(void) {
+    s_booting = false;
     if (app_provision_needed()) {
         ESP_LOGW(TAG, "设备未配网,进入配网模式(热点 + 网页)");
         app_provision_start();
@@ -239,8 +278,10 @@ static void boot_done(void) {
 void app_main(void) {
     ESP_LOGI(TAG, "AI Passport 打印机固件启动");
 
+#if !CONFIG_BSP_BOARD_CYD
     bsp_i2c_init();
     bsp_i2c_scan();
+#endif
 
     if (bsp_display_init() != ESP_OK || !bsp_lvgl_init()) {
         ESP_LOGE(TAG, "显示/LVGL 初始化失败,固件无法继续。"
@@ -252,7 +293,18 @@ void app_main(void) {
     bsp_display_backlight(100);
     screen_off_init();
 
-    s_ok[0] = (bsp_button_init(on_key, NULL) == ESP_OK);   // 页面导航依赖按键
+    s_key_queue = xQueueCreate(32, sizeof(key_event_t));
+    if (!s_key_queue) {
+        ESP_LOGE(TAG, "Input queue allocation failed");
+        return;
+    }
+    if (xTaskCreate(input_task, "app_input", 8192, NULL, 3, NULL) != pdPASS) {
+        vQueueDelete(s_key_queue);
+        s_key_queue = NULL;
+        ESP_LOGE(TAG, "Input task allocation failed");
+        return;
+    }
+    s_ok[0] = (bsp_button_init(on_key, NULL) == ESP_OK);
     s_ok[1] = true;                                        // 配网页常驻可用(修:原来进不去)
     s_ok[2] = true;                                        // 切网页:依赖已保存 WiFi 列表
     bsp_audio_init();                                       // 提示音(完成/失败/HMS)

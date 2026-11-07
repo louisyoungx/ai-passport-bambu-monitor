@@ -5,6 +5,8 @@
 A wearable Bambu Lab 3D-printer monitor built on the [FoloToy AI Passport](https://github.com/FoloToy/ai-passport) hardware (ESP32-C3).
 It subscribes to the Bambu Cloud MQTT stream and shows live print status, temperatures, AMS filament slots and device info on the 240×320 round-corner display — no phone needed.
 
+An **ESP32-2432S028R CYD (dual USB) profile** is also available: 4 MB Flash, portrait display, XPT2046 gestures, BOOT navigation and DAC notification audio. See [CYD setup and validation](docs/CYD.md). The original AI Passport profile is preserved.
+
 ## Features
 
 - **Live print status** — state, progress %, layer/nozzle counts, elapsed/remaining time

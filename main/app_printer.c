@@ -929,7 +929,11 @@ static void refresh_header(const bambu_state_t *st)
 
     char t[8];
     snprintf(t, sizeof(t), "%d%%", soc);
+#if CONFIG_BSP_BOARD_CYD
+    lv_label_set_text(s_bat_pct, "USB");
+#else
     lv_label_set_text(s_bat_pct, soc >= 0 ? t : "-");
+#endif
     uint32_t fc = soc > 50 ? C_GREEN : (soc > 20 ? C_YELLOW : C_RED);
     lv_obj_set_width(s_bat_fill, (soc < 0 ? 0 : soc) * 20 / 100);   // 电池内部净宽 20
     lv_obj_set_style_bg_color(s_bat_fill, lv_color_hex(fc), 0);

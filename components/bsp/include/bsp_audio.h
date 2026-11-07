@@ -1,5 +1,6 @@
 // components/bsp/include/bsp_audio.h
 // ES8311 音频 codec:I2C 走控制口(复用 bsp_i2c 的共享总线),I2S 走全双工数据口。
+// CYD backend: GPIO26 DAC, 16-bit mono PCM playback, no recording support.
 #pragma once
 
 #include "esp_err.h"

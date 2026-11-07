@@ -1,5 +1,6 @@
 // components/bsp/include/bsp_button.h
 // 三个按键共用一个 ADC 引脚,靠分压电阻区分。电压窗口见 bsp_pins.h。
+// CYD uses XPT2046 gestures + BOOT instead of the ADC backend; see docs/CYD.md.
 #pragma once
 
 #include "esp_err.h"
@@ -23,7 +24,7 @@ typedef enum {
 } bsp_btn_ev_t;
 
 // 按键事件回调。运行于 button 组件使用的共享 esp_timer 任务,只能入队或执行同等级
-// 的有界操作；勿在其中阻塞、访问 LVGL 或做重活。
+// 的有界操作；勿在其中阻塞、访问 LVGL 或做重活。CYD callbacks run on its input task.
 typedef void (*bsp_btn_cb_t)(bsp_btn_t btn, bsp_btn_ev_t ev, void *user);
 
 // 成功调用可重复，并更新回调与 user；失败会回滚本次已创建的按键和 ADC 资源。

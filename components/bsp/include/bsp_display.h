@@ -1,5 +1,5 @@
 // components/bsp/include/bsp_display.h
-// ST7789P3 240x320 显示:SPI 面板初始化 + 厂商专属寄存器 + LEDC 背光调光。
+// Portrait 240x320 SPI display and LEDC backlight; panel selected per board.
 #pragma once
 
 #include "esp_err.h"
@@ -8,7 +8,12 @@
 #include <stdint.h>
 
 // The final LVGL frame is masked to this radius; pixels outside are pure black.
+#include "sdkconfig.h"
+#if CONFIG_BSP_BOARD_CYD
+#define BSP_LVGL_SCREEN_RADIUS 0
+#else
 #define BSP_LVGL_SCREEN_RADIUS 30
+#endif
 
 // 初始化 SPI 总线、面板、厂商寄存器、背光 LEDC。成功调用可重复；失败会回滚本次
 // 已创建的显示资源，修正故障后可重试。成功后屏幕已上电但内容未定。

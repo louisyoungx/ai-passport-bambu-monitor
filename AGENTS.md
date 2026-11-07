@@ -3,11 +3,13 @@
 ## Project Structure & Module Organization
 
 This repository is an ESP-IDF BSP and hardware demonstration for the ESP32-C3-based FoloToy AI Passport.
+It also supports the ESP32-2432S028R CYD through a separate 4 MB profile; see `docs/CYD.md` for wiring, gestures, display variants and hardware acceptance.
 
 - `components/bsp/include/`: public BSP APIs and the hardware pin/configuration source of truth (`bsp_pins.h`).
 - `components/bsp/src/`: display, button, audio, battery, and shared-I2C implementations.
 - `main/`: the LVGL menu and independent `demo_*.c` hardware validation pages. New demos should implement the `enter`, `exit`, and `key` interface declared in `demo.h`.
 - `sdkconfig.defaults`: reproducible target, console, LVGL, and memory defaults.
+- `sdkconfig.defaults.cyd` / `partitions.cyd.csv`: ESP32 CYD defaults and 4 MB layout. `bsp_pins.h` selects `bsp_pins_cyd.h` for this board.
 - `README.md`: wiring, known hardware traps, and the required on-device acceptance checklist.
 
 Keep reusable hardware logic in `components/bsp`; keep board demonstration and UI behavior in `main`.
@@ -23,6 +25,8 @@ idf.py build                  # Compile firmware and validate dependencies
 idf.py flash monitor          # Flash the connected board and open logs
 idf.py fullclean              # Remove generated build state when configuration is stale
 ```
+
+For CYD, activate ESP-IDF 5.5.3 and run `./tools/build-cyd.ps1` on Windows, or use the equivalent `idf.py` command in `docs/CYD.md`. Keep its `build-cyd` and `sdkconfig.cyd` separate from the original ESP32-C3 build. LVGL is pinned to 9.5.0, whose Kconfig memory pool is expressed in KiB.
 
 There is no host-side automated test suite currently. Treat a clean `idf.py build` as the minimum check, then run every applicable item in the README acceptance checklist on real hardware.
 

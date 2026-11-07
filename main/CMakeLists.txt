@@ -1,3 +1,8 @@
+set(console_requires)
+if(IDF_TARGET STREQUAL "esp32c3")
+    list(APPEND console_requires esp_driver_usb_serial_jtag)
+endif()
+
 idf_component_register(
     SRCS "main.c"
          "ui_pixel.c"
@@ -15,8 +20,9 @@ idf_component_register(
          "font_zh14.c"
          "font_zh20.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp esp_wifi nvs_flash esp_event esp_netif esp_timer esp_pm esp_driver_usb_serial_jtag esp_http_server esp_http_client mqtt json mbedtls
+    REQUIRES bsp esp_wifi nvs_flash esp_event esp_netif esp_timer esp_pm ${console_requires} esp_http_server esp_http_client mqtt json mbedtls
 )
 
-# 固件版本宏(取自 CMake project VERSION,供设备页显示)
-target_compile_definitions(${COMPONENT_LIB} PUBLIC FW_VERSION="${PROJECT_VERSION}")
+# Firmware version from ESP-IDF's project metadata, for the device page.
+idf_build_get_property(firmware_version PROJECT_VER)
+target_compile_definitions(${COMPONENT_LIB} PUBLIC FW_VERSION="${firmware_version}")

@@ -7,4 +7,5 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # v1.4: 首次配置全程手机完成(网页即时连 WiFi + 拓竹短信登录自动取 Token/UID/打印机)
 # v1.5: 省电(空闲熄屏 + Wi-Fi modem sleep + 音频按需 + 自动 light sleep)+ 云端大报文本地修复
 # 产物名 passport_printer.bin
+set(PROJECT_VER "1.5.0")
 project(passport_printer VERSION 1.5.0)

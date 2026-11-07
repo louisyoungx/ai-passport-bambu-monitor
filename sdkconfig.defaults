@@ -31,8 +31,8 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 # 拓竹云端 pushall 回报单条 TLS record 约 11.7KB,需要一次性连续 11.7KB:
 # 64KB 池时最大空闲块不足 → 连接后读不到报文,表现为一直"连接中";
 # 48KB 池会触发 LVGL 写越界崩溃(Store access fault)。56KB 是实测可用的折中。
-# 注意:旧键 LV_MEM_SIZE_KILOBYTES 已被 LVGL 9 弃用,必须用 LV_MEM_SIZE(字节)。
-CONFIG_LV_MEM_SIZE=57344
+# The pinned LVGL 9.5.0 Kconfig uses KiB; 56 KiB = 57344 bytes.
+CONFIG_LV_MEM_SIZE_KILOBYTES=56
 
 # --- TLS ---
 # 配网页要在设备端直连 api.bambulab.cn 做短信登录。C3 无 PSRAM,

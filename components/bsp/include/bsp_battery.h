@@ -1,6 +1,7 @@
 // components/bsp/include/bsp_battery.h
 // CellWise CW2017 电量计:I2C 0x63,与 ES8311 共用总线。
 // BSP 写入自定义电池 profile,芯片直接给 SOC%,无需外部分压电阻与查表。
+// CYD has no gauge: init returns NOT_SUPPORTED, readings return -1.
 #pragma once
 
 #include "esp_err.h"

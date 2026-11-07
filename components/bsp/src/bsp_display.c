@@ -8,6 +8,9 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_vendor.h"
+#if CONFIG_BSP_CYD_LCD_ILI9341
+#include "esp_lcd_ili9341.h"
+#endif
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -81,6 +84,7 @@ typedef struct {
     uint16_t delay_ms;
 } st_init_cmd_t;
 
+#if !CONFIG_BSP_BOARD_CYD
 static const st_init_cmd_t ST7789P3_CMDS[] = {
     {0xB2, {0x05, 0x05, 0x00, 0x33, 0x33}, 5, 0},   // PORCTRL 帧率 porch
     {0xB7, {0x35}, 1, 0},                            // GCTRL 栅极
@@ -98,6 +102,8 @@ static const st_init_cmd_t ST7789P3_CMDS[] = {
     {0xE1, {0xD0, 0x03, 0x09, 0x0A, 0x0A, 0x06, 0x2E, 0x44,
             0x40, 0x3A, 0x15, 0x15, 0x26, 0x2A}, 14, 10},  // NVGAMCTRL 负伽马
 };
+
+#endif
 
 static esp_err_t backlight_init(void) {
     if (BSP_LCD_BL < 0) { ESP_LOGW(TAG, "背光引脚未接 MCU,亮度不可调"); return ESP_OK; }
@@ -170,10 +176,14 @@ esp_err_t bsp_display_init(void) {
 
     esp_lcd_panel_dev_config_t dev = {
         .reset_gpio_num = BSP_LCD_RST,          // -1 → SWRESET 软复位
-        .rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB,
+        .rgb_ele_order  = BSP_LCD_RGB_ORDER,
         .bits_per_pixel = 16,
     };
+#if CONFIG_BSP_CYD_LCD_ILI9341
+    e = esp_lcd_new_panel_ili9341(s_io, &dev, &s_panel);
+#else
     e = esp_lcd_new_panel_st7789(s_io, &dev, &s_panel);
+#endif
     if (e != ESP_OK) { ESP_LOGE(TAG, "面板创建失败: %s", esp_err_to_name(e)); goto fail; }
 
     e = esp_lcd_panel_reset(s_panel);   // rst=-1 时走 SWRESET
@@ -181,6 +191,7 @@ esp_err_t bsp_display_init(void) {
     e = esp_lcd_panel_init(s_panel);    // SLPOUT / COLMOD / RAMCTRL
     if (e != ESP_OK) { ESP_LOGE(TAG, "面板初始化失败: %s", esp_err_to_name(e)); goto fail; }
 
+#if !CONFIG_BSP_BOARD_CYD
     for (size_t i = 0; i < sizeof(ST7789P3_CMDS) / sizeof(ST7789P3_CMDS[0]); i++) {
         const st_init_cmd_t *c = &ST7789P3_CMDS[i];
         e = esp_lcd_panel_io_tx_param(s_io, c->cmd, c->data, c->len);
@@ -191,9 +202,10 @@ esp_err_t bsp_display_init(void) {
         if (c->delay_ms) vTaskDelay(pdMS_TO_TICKS(c->delay_ms));
     }
 
+#endif
     e = esp_lcd_panel_invert_color(s_panel, BSP_LCD_INVERT_COLOR);   // 0x21 / 0x20
     if (e != ESP_OK) { ESP_LOGE(TAG, "面板反色设置失败: %s", esp_err_to_name(e)); goto fail; }
-    e = esp_lcd_panel_mirror(s_panel, false, false);                 // 0x36 MADCTL:本板不需镜像(XY 双镜像 = 画面 180°)
+    e = esp_lcd_panel_mirror(s_panel, BSP_LCD_MIRROR_X, BSP_LCD_MIRROR_Y);
     if (e != ESP_OK) { ESP_LOGE(TAG, "面板镜像设置失败: %s", esp_err_to_name(e)); goto fail; }
     e = esp_lcd_panel_set_gap(s_panel, 0, 0);
     if (e != ESP_OK) { ESP_LOGE(TAG, "面板偏移设置失败: %s", esp_err_to_name(e)); goto fail; }
@@ -203,7 +215,8 @@ esp_err_t bsp_display_init(void) {
     e = backlight_init();
     if (e != ESP_OK) goto fail;
     s_ready = true;
-    ESP_LOGI(TAG, "显示就绪 %dx%d", BSP_LCD_W, BSP_LCD_H);
+    ESP_LOGI(TAG, "显示就绪 %dx%d mirror_x=%d mirror_y=%d",
+             BSP_LCD_W, BSP_LCD_H, BSP_LCD_MIRROR_X, BSP_LCD_MIRROR_Y);
     return ESP_OK;
 
 fail:
@@ -248,12 +261,12 @@ esp_err_t bsp_display_prepare_deep_sleep(void) {
     } else {
         esp_err_t e = esp_lcd_panel_disp_on_off(s_panel, false);
         if (e != ESP_OK) {
-            ESP_LOGE(TAG, "ST7789 关闭显示失败: %s", esp_err_to_name(e));
+            ESP_LOGE(TAG, "LCD 关闭显示失败: %s", esp_err_to_name(e));
             first_error = e;
         }
         e = esp_lcd_panel_disp_sleep(s_panel, true);
         if (e != ESP_OK) {
-            ESP_LOGE(TAG, "ST7789 Sleep In 失败: %s", esp_err_to_name(e));
+            ESP_LOGE(TAG, "LCD Sleep In 失败: %s", esp_err_to_name(e));
             if (first_error == ESP_OK) first_error = e;
         }
     }
@@ -283,6 +296,6 @@ esp_err_t bsp_display_prepare_deep_sleep(void) {
         }
     }
     gpio_deep_sleep_hold_en();
-    ESP_LOGI(TAG, "ST7789 已休眠，LCD SPI 与背光安全电平已保持");
+    ESP_LOGI(TAG, "LCD 已休眠，LCD SPI 与背光安全电平已保持");
     return first_error;
 }

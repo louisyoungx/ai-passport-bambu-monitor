@@ -1,11 +1,16 @@
 // components/bsp/include/bsp_pins.h
-// FoloToy AI Passport 硬件引脚与参数的【单一事实来源】。换板/改硬件只需改这一个文件。
+// Board pin entry point: AI Passport below, CYD in bsp_pins_cyd.h.
 // 每项都注明"为什么是这个值",便于二次开发时判断能不能改。
 #pragma once
 
+#include "sdkconfig.h"
 #include "driver/spi_master.h"
 #include "driver/i2c_types.h"
 #include "hal/adc_types.h"
+
+#if CONFIG_BSP_BOARD_CYD
+#include "bsp_pins_cyd.h"
+#else
 
 // ============================================================================
 // 显示:ST7789P3 240x320,4-line SPI
@@ -91,3 +96,8 @@
 #define BSP_I2S_DIN          4       // 录音:codec → MCU
 // -1 = 功放使能脚未接 MCU(常通)。若你的板子接了,填对应 GPIO。
 #define BSP_I2S_PA_CTRL      (-1)
+
+#define BSP_LCD_RGB_ORDER    LCD_RGB_ELEMENT_ORDER_RGB
+#define BSP_LCD_MIRROR_X     0
+#define BSP_LCD_MIRROR_Y     0
+#endif

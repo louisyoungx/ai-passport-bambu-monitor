@@ -1,0 +1,73 @@
+menu "Board support"
+
+config BSP_BOARD_CYD
+    bool "ESP32-2432S028R Cheap Yellow Display"
+    depends on IDF_TARGET_ESP32
+    default y
+    help
+        Use the ESP32 CYD instead of the ESP32-C3 FoloToy AI Passport.
+
+if BSP_BOARD_CYD
+
+choice BSP_CYD_LCD
+    prompt "CYD display controller"
+    default BSP_CYD_LCD_ST7789
+config BSP_CYD_LCD_ST7789
+    bool "ST7789 (common dual USB revision)"
+config BSP_CYD_LCD_ILI9341
+    bool "ILI9341 (alternative CYD revision)"
+endchoice
+
+config BSP_CYD_LCD_BGR
+    bool "BGR color order"
+    default y
+config BSP_CYD_LCD_INVERT
+    bool "Invert display colors"
+    default y if BSP_CYD_LCD_ST7789
+config BSP_CYD_LCD_SPI_MODE
+    int "LCD SPI mode"
+    range 0 3
+    default 0
+config BSP_CYD_LCD_MIRROR_X
+    bool "Mirror display horizontally"
+    default y if BSP_CYD_LCD_ST7789
+config BSP_CYD_LCD_MIRROR_Y
+    bool "Mirror display vertically"
+    default n
+config BSP_CYD_ROTATE_180
+    bool "Rotate display and gestures 180 degrees"
+    default n
+    help
+        Rotate both the corrected display and calibrated touch coordinates.
+        The native panel mirror settings above remain independent.
+config BSP_CYD_TOUCH_SWAP_XY
+    bool "Swap touch axes"
+    default y
+config BSP_CYD_TOUCH_INVERT_X
+    bool "Invert touch X axis"
+    default y
+config BSP_CYD_TOUCH_INVERT_Y
+    bool "Invert touch Y axis"
+    default n
+config BSP_CYD_TOUCH_X_MIN
+    int "Raw touch X minimum"
+    range 0 4094
+    default 200
+config BSP_CYD_TOUCH_X_MAX
+    int "Raw touch X maximum"
+    range 1 4095
+    default 3900
+config BSP_CYD_TOUCH_Y_MIN
+    int "Raw touch Y minimum"
+    range 0 4094
+    default 200
+config BSP_CYD_TOUCH_Y_MAX
+    int "Raw touch Y maximum"
+    range 1 4095
+    default 3900
+config BSP_CYD_TOUCH_DEBUG
+    bool "Log raw touch coordinates for calibration"
+    default n
+
+endif
+endmenu
