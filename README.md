@@ -10,6 +10,7 @@ An **ESP32-2432S028R CYD (dual USB) profile** is also available: 4 MB Flash, por
 ## Features
 
 - **Live print status** — state, progress %, layer/nozzle counts, elapsed/remaining time
+- **Camera second page** — standalone LAN JPEG snapshots with print information; actual image dimensions are fitted without cropping or stretching. Camera settings are stored per printer. X2D is hardware-tested; other printer/firmware combinations need validation. See [camera UI and setup](docs/CAMERA_UI.md).
 - **Temperatures** — bed, nozzle and chamber target/current values
 - **AMS filament** — up to 4 AMS × 4 slots: material, color, name and remaining grams (manual spools without RFID are handled correctly)
 - **HMS alerts** — error codes shown in the status bar with a notification sound

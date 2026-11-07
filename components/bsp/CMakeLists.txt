@@ -8,11 +8,15 @@ endif()
 if(IDF_TARGET STREQUAL "esp32")
     set(board_requires esp_driver_dac esp_lcd_ili9341)
 endif()
+set(console_requires)
+if(IDF_TARGET STREQUAL "esp32c3")
+    list(APPEND console_requires esp_driver_usb_serial_jtag)
+endif()
 
 idf_component_register(
     SRCS "src/bsp_i2c.c" "src/bsp_display.c" "src/bsp_display_lvgl.c"
          "src/bsp_display_rounding.c" ${board_sources}
     INCLUDE_DIRS "include"
     REQUIRES driver esp_driver_i2c esp_lcd esp_lvgl_port ${board_requires}
-    PRIV_REQUIRES esp_timer esp_pm
+    PRIV_REQUIRES esp_timer esp_pm ${console_requires}
 )
