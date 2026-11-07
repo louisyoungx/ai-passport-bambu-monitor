@@ -215,8 +215,9 @@ esp_err_t bsp_display_init(void) {
     e = backlight_init();
     if (e != ESP_OK) goto fail;
     s_ready = true;
-    ESP_LOGI(TAG, "显示就绪 %dx%d mirror_x=%d mirror_y=%d",
-             BSP_LCD_W, BSP_LCD_H, BSP_LCD_MIRROR_X, BSP_LCD_MIRROR_Y);
+    ESP_LOGI(TAG, "显示就绪 %dx%d mirror_x=%d mirror_y=%d invert=%d",
+             BSP_LCD_W, BSP_LCD_H, BSP_LCD_MIRROR_X, BSP_LCD_MIRROR_Y,
+             BSP_LCD_INVERT_COLOR);
     return ESP_OK;
 
 fail:

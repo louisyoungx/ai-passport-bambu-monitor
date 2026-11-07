@@ -11,6 +11,9 @@ typedef enum {
     BSP_BTN_UP = 0,
     BSP_BTN_DOWN,
     BSP_BTN_OK,
+    // Virtual touch navigation, independent of the three physical buttons.
+    BSP_BTN_PREV_PAGE,
+    BSP_BTN_NEXT_PAGE,
 } bsp_btn_t;
 
 typedef enum {

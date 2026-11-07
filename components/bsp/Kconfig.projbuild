@@ -23,7 +23,7 @@ config BSP_CYD_LCD_BGR
     default y
 config BSP_CYD_LCD_INVERT
     bool "Invert display colors"
-    default y if BSP_CYD_LCD_ST7789
+    default n
 config BSP_CYD_LCD_SPI_MODE
     int "LCD SPI mode"
     range 0 3

@@ -119,10 +119,17 @@ static void input_task(void *arg) {
                 touching = false;
                 if (!touch_long) {
                     int dx = x - x0, dy = y - y0;
-                    if (abs(dy) >= 40 && abs(dy) > abs(dx))
+                    if (abs(dx) >= 40 && abs(dx) >= abs(dy)) {
+                        ESP_LOGI(TAG, "Swipe %s: %s page", dx < 0 ? "left" : "right",
+                                 dx < 0 ? "next" : "previous");
+                        emit(dx < 0 ? BSP_BTN_NEXT_PAGE : BSP_BTN_PREV_PAGE,
+                             BSP_BTN_CLICK);
+                    } else if (abs(dy) >= 40 && abs(dy) > abs(dx)) {
+                        ESP_LOGI(TAG, "Swipe %s: navigate", dy < 0 ? "up" : "down");
                         emit(dy < 0 ? BSP_BTN_DOWN : BSP_BTN_UP, BSP_BTN_CLICK);
-                    else if (moved < 24)
+                    } else if (moved < 24) {
                         emit(BSP_BTN_OK, BSP_BTN_CLICK);
+                    }
                 }
                 emit(BSP_BTN_OK, BSP_BTN_RELEASE);
             }
@@ -212,7 +219,7 @@ esp_err_t bsp_button_init(bsp_btn_cb_t cb, void *user) {
         spi_bus_free(BSP_TOUCH_SPI_HOST);
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "CYD: swipe=UP/DOWN, tap=OK, hold=back; BOOT click/double/hold; rotation=%d",
+    ESP_LOGI(TAG, "CYD: left/right=pages, up/down=navigate, tap=OK, hold=back; BOOT click/double/hold; rotation=%d",
              BSP_LCD_ROTATE_180 ? 180 : 0);
     return ESP_OK;
 }

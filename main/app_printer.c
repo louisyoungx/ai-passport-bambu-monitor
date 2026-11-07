@@ -19,6 +19,8 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+static const char *TAG = "printer";
+
 #define PAGE_MAX 8          // 最多 2(固定)+4(AMS)+1(设备)+1(控制)
 #define MSG_MAX  48
 
@@ -1313,6 +1315,8 @@ static void key_handle(bsp_btn_t btn, bsp_btn_ev_t ev)
     // 概览列表模式:上下选机器,OK 进详情;长按 OK 返回菜单(由上层 main 处理)
     if (s_ov_mode) {
         if (ev == BSP_BTN_LONG && btn == BSP_BTN_OK) return;   // 留给上层退出
+        if (btn == BSP_BTN_PREV_PAGE) btn = BSP_BTN_UP;
+        else if (btn == BSP_BTN_NEXT_PAGE) btn = BSP_BTN_DOWN;
         ov_key(btn, ev);
         return;
     }
@@ -1334,7 +1338,12 @@ static void key_handle(bsp_btn_t btn, bsp_btn_ev_t ev)
         s_dirty = true;      // 交互必重绘(数据可能没变,但选中项/显示模式变了)
         // 控制页:上下=选择,顶/底溢出=翻页;OK=执行
         bool in_ctl = (s_cur == s_pages_n - 1);
-        if (btn == BSP_BTN_UP) {
+        if (btn == BSP_BTN_PREV_PAGE || btn == BSP_BTN_NEXT_PAGE) {
+            int delta = btn == BSP_BTN_NEXT_PAGE ? 1 : s_pages_n - 1;
+            int target = (s_cur + delta) % s_pages_n;
+            ESP_LOGI(TAG, "Page swipe: %d -> %d", s_cur, target);
+            show_page(target);
+        } else if (btn == BSP_BTN_UP) {
             if (in_ctl) {
                 if (s_ctl_sel > 0) { s_ctl_sel--; request_refresh(); }
                 else show_page((s_cur + s_pages_n - 1) % s_pages_n);
@@ -1384,6 +1393,9 @@ static void key_handle(bsp_btn_t btn, bsp_btn_ev_t ev)
 void app_printer_key(bsp_btn_t btn, bsp_btn_ev_t ev)
 {
     if (!s_scr) return;
+    // Touch emits CLICK immediately before RELEASE. Only actionable events
+    // may replace the pending action consumed by the LVGL timer.
+    if (ev != BSP_BTN_CLICK && ev != BSP_BTN_LONG) return;
     s_pk_btn = btn; s_pk_ev = ev; s_pk_valid = true;
 }
 

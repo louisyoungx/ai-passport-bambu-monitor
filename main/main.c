@@ -36,7 +36,7 @@
 
 static const char *TAG = "main";
 
-// 空闲熄屏:30s 无按键 → 背光 0 并暂停 LVGL;任意键点亮,并吞掉唤醒它的那一次按键。
+// CYD stays on continuously; AI Passport retains the 30-second idle timeout.
 static int64_t s_key_us;
 static bool    s_screen_off;
 static bool    s_swallow_key;
@@ -103,6 +103,7 @@ static void pm_init(void) {}
 static void screen_off_tick(void *arg)
 {
     (void)arg;
+#if !CONFIG_BSP_BOARD_CYD
     if (s_booting || s_screen_off || app_provision_needed()) return;
     if (esp_timer_get_time() - s_key_us < 30LL * 1000 * 1000) return;
     bsp_display_backlight(0);
@@ -114,10 +115,14 @@ static void screen_off_tick(void *arg)
     // Screen-off state is owned by the application input task.
     s_screen_off = true;
     ESP_LOGI(TAG, "空闲 30s,熄屏");
+#endif
 }
 
 static void screen_off_init(void)
 {
+#if CONFIG_BSP_BOARD_CYD
+    ESP_LOGI(TAG, "CYD display policy: always on");
+#endif
     s_key_us = esp_timer_get_time();
 }
 
@@ -208,6 +213,13 @@ static void dispatch_key(bsp_btn_t btn, bsp_btn_ev_t ev) {
     if (s_booting) return;
     if (screen_off_on_key(ev)) return;
     if (!bsp_lvgl_lock(500)) return;
+
+    // Printer details distinguish page swipes from control-row selection.
+    // Other menus use both gesture axes to move through their list.
+    if (s_active != 0) {
+        if (btn == BSP_BTN_PREV_PAGE) btn = BSP_BTN_UP;
+        else if (btn == BSP_BTN_NEXT_PAGE) btn = BSP_BTN_DOWN;
+    }
 
     if (s_active >= 0) {
         if (btn == BSP_BTN_OK && ev == BSP_BTN_LONG) {     // 统一返回
