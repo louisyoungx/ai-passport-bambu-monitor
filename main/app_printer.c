@@ -1096,8 +1096,9 @@ static void refresh_all(void)
     if (ams_pages > 4) ams_pages = 4;
     if (ams_pages == 0 && st.gcode_state[0]) ams_pages = 1;
     if (s_restore_slot >= 0) {
-        if (wanted_slot >= 2 && wanted_slot <= 5 && !st.gcode_state[0]) {
-            // Do not mistake an empty startup snapshot for a removed AMS.
+        if (wanted_slot >= 2 && wanted_slot <= 5 && !st.ams_topology_known) {
+            // G-code deltas can arrive before AMS topology. Keep the saved
+            // slot pending until an explicit (possibly empty) array arrives.
             if (ams_pages < wanted_slot - 1) ams_pages = wanted_slot - 1;
         } else {
             s_restore_slot = -1;
@@ -1473,6 +1474,12 @@ void app_printer_enter(void)
                  (int)mon.free_size, (int)mon.used_pct);
     }
     refresh_all();
+}
+
+void app_printer_set_suspended(bool suspended) {
+    if (!s_scr || s_ov_mode || s_slot[s_cur] != CAMERA_SLOT) return;
+    if (suspended) app_camera_stop();
+    else app_camera_start(s_midx, 0, CAMERA_VIEW_Y, 240, CAMERA_VIEW_H);
 }
 
 void app_printer_exit(void)

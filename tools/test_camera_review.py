@@ -1,0 +1,203 @@
+"""Compile actual firmware functions with host-only I/O stubs for CR regressions.
+
+Requires a native C compiler. CC may be a command, e.g. `cc` or `zig cc`.
+Only function bodies are extracted; no duplicate implementation is maintained.
+Run: python -m unittest discover -s tools -p test_camera_review.py -v
+"""
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = Path(__file__).resolve().parent / "tests"
+
+
+def function(source, name):
+    """Extract a top-level function, ignoring braces inside strings/comments."""
+    match = re.search(r"^[A-Za-z_][^;\n]*\b" + re.escape(name) + r"\s*\([^;{}]*\)\s*\{", source, re.M)
+    if not match:
+        raise AssertionError(f"Production function missing: {name}")
+    start = match.end() - 1
+    depth = 0
+    pattern = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*.*?\*/|[{}]', re.S)
+    for token in pattern.finditer(source, start):
+        if token.group() == "{":
+            depth += 1
+        elif token.group() == "}":
+            depth -= 1
+            if depth == 0:
+                return source[match.start():token.end()]
+    raise AssertionError(f"Unterminated function: {name}")
+
+
+class CameraReviewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        command = os.environ.get("CC")
+        cls.cc = shlex.split(command) if command else [shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")]
+        if not cls.cc[0]:
+            raise unittest.SkipTest("Native C compiler required (set CC)")
+        cls.directory = tempfile.TemporaryDirectory(prefix="passport-camera-review-")
+        cls.addClassCleanup(cls.directory.cleanup)
+        cls.work = Path(cls.directory.name)
+        cls.executables = {}
+        sources = {name: (ROOT / "main" / f"app_{name}.c").read_text(encoding="utf-8")
+                   for name in ["camera", "mqtt", "printer", "config", "provision"]}
+        main = (ROOT / "main/main.c").read_text(encoding="utf-8")
+        reader = re.search(r"typedef struct \{.*?\} camera_reader_t;", sources["camera"], re.S).group()
+        mqtt = sources["mqtt"][sources["mqtt"].index("static void sanitize_job"):sources["mqtt"].index("static void push_pushall")]
+        roster = "\n".join(function(sources["config"], name) for name in ["config_machine_count", "config_load_printers"])
+        fixtures = {
+            "power": {"PRINTING": function(sources["mqtt"], "app_mqtt_any_printing"),
+                      "WAKE": function(main, "screen_wake"), "TICK": function(main, "screen_off_tick"),
+                      "KEY": function(main, "screen_off_on_key")},
+            "worker": {"READER": reader, "CURRENT": function(sources["camera"], "current"),
+                       "STATUS": function(sources["camera"], "status"), "WORKER": function(sources["camera"], "worker")},
+            "pin": {"READER": reader, "CURRENT": function(sources["camera"], "current"),
+                    "CONNECT": function(sources["camera"], "connect_camera")},
+            "topology": {"MQTT": mqtt, "REFRESH": function(sources["printer"], "refresh_all")},
+            "settings": {"ROSTER": roster, "HELPERS": "\n".join(function(sources["provision"], name)
+                for name in ["hexval", "url_decode", "form_field", "json_str", "utf8_copy"]),
+                "GET": function(sources["provision"], "camera_get_handler"),
+                "POST": function(sources["provision"], "camera_save_handler")},
+        }
+        fixtures["power_cyd"] = fixtures["power"]
+        for kind, replacements in fixtures.items():
+            fixture = "power" if kind == "power_cyd" else kind
+            text = (FIXTURES / f"camera_review_{fixture}.c").read_text(encoding="utf-8")
+            for key, value in replacements.items():
+                marker = f"/* @{key}@ */"
+                if marker not in text:
+                    raise AssertionError(f"Missing fixture marker {marker}")
+                text = text.replace(marker, value)
+            source = cls.work / f"{kind}.c"
+            source.write_text(text, encoding="utf-8")
+            output = cls.work / (kind + (".exe" if os.name == "nt" else ""))
+            flags = ["-DCONFIG_BSP_BOARD_CYD=1", "-DCONFIG_PM_ENABLE=0"] if kind == "power_cyd" else []
+            result = subprocess.run(cls.cc + flags + ["-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
+                "-Wno-unused-function", "-Wno-unused-variable", "-Wno-unused-parameter", "-Wno-sign-compare",
+                "-I", str(ROOT / "main"), "-I", str(FIXTURES), str(source),
+                str(ROOT / "main/app_notify_transition.c"), "-o", str(output)], capture_output=True, encoding="utf-8", errors="replace")
+            if result.returncode:
+                raise AssertionError(result.stdout + result.stderr)
+            cls.executables[kind] = output
+
+    def run_case(self, kind, case):
+        result = subprocess.run([str(self.executables[kind]), case], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_offline_poll_retains_verified_image(self):
+        self.run_case("worker", "offline")
+
+    def test_cyd_inactive_states_sleep_regardless_of_power(self):
+        self.run_case("power_cyd", "inactive")
+
+    def test_cyd_running_never_times_out_regardless_of_power(self):
+        self.run_case("power_cyd", "cyd-running")
+
+    def test_cyd_finishing_starts_timeout(self):
+        self.run_case("power_cyd", "finish")
+
+    def test_cyd_starting_print_wakes_without_usb_detection(self):
+        self.run_case("power_cyd", "cyd-wake")
+
+    def test_cyd_other_configured_printer_can_keep_awake(self):
+        self.run_case("power_cyd", "multi")
+
+    def test_cyd_offline_or_uninitialized_state_times_out(self):
+        self.run_case("power_cyd", "offline")
+
+    def test_cyd_touch_wakes_without_executing_gesture(self):
+        self.run_case("power_cyd", "cyd-touch")
+
+    def test_cyd_hold_wakes_without_returning_to_menu(self):
+        self.run_case("power_cyd", "cyd-hold")
+
+    def test_boot_animation_does_not_sleep(self):
+        for kind in ["power", "power_cyd"]:
+            with self.subTest(board=kind):
+                self.run_case(kind, "boot")
+
+    def test_inactive_print_states_sleep_with_or_without_usb(self):
+        self.run_case("power", "inactive")
+
+    def test_finishing_starts_idle_timeout_while_powered(self):
+        self.run_case("power", "finish")
+
+    def test_unplugging_running_print_starts_idle_timeout(self):
+        self.run_case("power", "unplug")
+
+    def test_running_print_on_battery_still_sleeps(self):
+        self.run_case("power", "battery")
+
+    def test_any_configured_printing_machine_keeps_powered_screen_on(self):
+        self.run_case("power", "multi")
+
+    def test_stale_or_uninitialized_printing_state_does_not_keep_awake(self):
+        self.run_case("power", "offline")
+
+    def test_usb_attach_wakes_only_when_printing(self):
+        self.run_case("power", "wake")
+
+    def test_key_wake_resumes_camera_and_consumes_delayed_click(self):
+        self.run_case("power", "key")
+
+    def test_pin_save_failure_retries_until_persisted(self):
+        self.run_case("pin", "retry")
+
+    def test_identity_failure_does_not_persist_pin(self):
+        self.run_case("pin", "identity")
+
+    def test_unseen_certificate_does_not_persist_pin(self):
+        self.run_case("pin", "unseen")
+
+    def test_failed_partial_frame_invalidates_image(self):
+        self.run_case("worker", "partial")
+
+    def test_failed_fetch_without_drawing_retains_image(self):
+        self.run_case("worker", "untouched")
+
+    def test_first_offline_poll_does_not_invent_image(self):
+        self.run_case("worker", "first-offline")
+
+    def test_state_delta_does_not_cancel_saved_ams4(self):
+        self.run_case("topology", "delta-then-topology")
+
+    def test_nested_empty_topology_confirms_removed_ams(self):
+        self.run_case("topology", "nested-empty")
+
+    def test_direct_empty_topology_confirms_removed_ams(self):
+        self.run_case("topology", "direct-empty")
+
+    def test_partial_ams_status_is_not_topology(self):
+        self.run_case("topology", "partial")
+
+    def test_other_printer_topology_does_not_cancel_restore(self):
+        self.run_case("topology", "other-printer")
+
+    def test_truncated_or_null_topology_is_not_confirmation(self):
+        self.run_case("topology", "invalid")
+
+    def test_legacy_camera_get_and_save_use_same_identity(self):
+        self.run_case("settings", "legacy")
+
+    def test_nvs_printer_takes_precedence(self):
+        self.run_case("settings", "nvs")
+
+    def test_sparse_nvs_printer_does_not_inject_legacy(self):
+        self.run_case("settings", "sparse")
+
+    def test_placeholder_or_empty_legacy_is_not_a_printer(self):
+        self.run_case("settings", "placeholder")
+
+    def test_legacy_identity_survives_nvs_load_failure(self):
+        self.run_case("settings", "load-error")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -61,6 +61,7 @@ typedef struct {
 
     bambu_ams_t ams[BAMBU_AMS_MAX];
     int   ams_count;         // 在位 AMS 台数(0=外部料筒或未知)
+    bool  ams_topology_known; // 已收到明确的 AMS 数组（包括空数组），不是普通状态增量
     bool  ams_active;        // true=AMS 当前料槽;false=外部料筒
     bambu_hms_t hms[BAMBU_HMS_MAX];
     int   hms_count;         // 当前 HMS 错误数(0=无)
@@ -77,6 +78,10 @@ void app_mqtt_request_now(int idx);
 
 // 线程安全取第 idx 台机器的状态快照。从未收到过数据时 cloud 为 OFF/CONNECTING。
 void app_mqtt_snapshot(int idx, bambu_state_t *out);
+
+// True when any configured printer has cloud-online RUNNING state. Paused,
+// completed, failed and unknown/offline states do not keep the screen awake.
+bool app_mqtt_any_printing(void);
 
 // 云连接已维持的秒数(设备页显示用)。
 int app_mqtt_uptime_sec(void);
