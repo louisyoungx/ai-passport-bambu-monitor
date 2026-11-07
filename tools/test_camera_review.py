@@ -54,6 +54,7 @@ class CameraReviewTests(unittest.TestCase):
         roster = "\n".join(function(sources["config"], name) for name in ["config_machine_count", "config_load_printers"])
         fixtures = {
             "power": {"PRINTING": function(sources["mqtt"], "app_mqtt_any_printing"),
+                      "SEQUENCE": function(sources["mqtt"], "app_mqtt_screen_wake_sequence"), "MQTT": mqtt,
                       "WAKE": function(main, "screen_wake"), "TICK": function(main, "screen_off_tick"),
                       "KEY": function(main, "screen_off_on_key")},
             "worker": {"READER": reader, "CURRENT": function(sources["camera"], "current"),
@@ -82,46 +83,30 @@ class CameraReviewTests(unittest.TestCase):
             result = subprocess.run(cls.cc + flags + ["-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
                 "-Wno-unused-function", "-Wno-unused-variable", "-Wno-unused-parameter", "-Wno-sign-compare",
                 "-I", str(ROOT / "main"), "-I", str(FIXTURES), str(source),
-                str(ROOT / "main/app_notify_transition.c"), "-o", str(output)], capture_output=True, encoding="utf-8", errors="replace")
+                str(ROOT / "main/app_notify_transition.c"), str(ROOT / "main/app_screen_policy.c"),
+                "-o", str(output)], capture_output=True, encoding="utf-8", errors="replace")
             if result.returncode:
                 raise AssertionError(result.stdout + result.stderr)
             cls.executables[kind] = output
 
     def run_case(self, kind, case):
-        result = subprocess.run([str(self.executables[kind]), case], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        profiles = ["power", "power_cyd"] if kind == "power" else [kind]
+        for profile in profiles:
+            with self.subTest(profile=profile):
+                result = subprocess.run([str(self.executables[profile]), case], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_touch_click_before_release_only_wakes_first_gesture(self):
+        self.run_case("power", "touch-order")
+
+    def test_hold_used_to_wake_does_not_return_to_menu(self):
+        self.run_case("power", "hold-order")
+
+    def test_boot_suppresses_idle_sleep(self):
+        self.run_case("power", "boot")
 
     def test_offline_poll_retains_verified_image(self):
         self.run_case("worker", "offline")
-
-    def test_cyd_inactive_states_sleep_regardless_of_power(self):
-        self.run_case("power_cyd", "inactive")
-
-    def test_cyd_running_never_times_out_regardless_of_power(self):
-        self.run_case("power_cyd", "cyd-running")
-
-    def test_cyd_finishing_starts_timeout(self):
-        self.run_case("power_cyd", "finish")
-
-    def test_cyd_starting_print_wakes_without_usb_detection(self):
-        self.run_case("power_cyd", "cyd-wake")
-
-    def test_cyd_other_configured_printer_can_keep_awake(self):
-        self.run_case("power_cyd", "multi")
-
-    def test_cyd_offline_or_uninitialized_state_times_out(self):
-        self.run_case("power_cyd", "offline")
-
-    def test_cyd_touch_wakes_without_executing_gesture(self):
-        self.run_case("power_cyd", "cyd-touch")
-
-    def test_cyd_hold_wakes_without_returning_to_menu(self):
-        self.run_case("power_cyd", "cyd-hold")
-
-    def test_boot_animation_does_not_sleep(self):
-        for kind in ["power", "power_cyd"]:
-            with self.subTest(board=kind):
-                self.run_case(kind, "boot")
 
     def test_inactive_print_states_sleep_with_or_without_usb(self):
         self.run_case("power", "inactive")
@@ -141,8 +126,35 @@ class CameraReviewTests(unittest.TestCase):
     def test_stale_or_uninitialized_printing_state_does_not_keep_awake(self):
         self.run_case("power", "offline")
 
-    def test_usb_attach_wakes_only_when_printing(self):
+    def test_usb_attach_wakes_once_even_without_printing(self):
         self.run_case("power", "wake")
+
+    def test_start_and_finish_wake_on_both_power_sources(self):
+        self.run_case("power", "events")
+
+    def test_initial_historical_states_never_generate_wake_events(self):
+        self.run_case("power", "initial")
+
+    def test_other_printer_events_and_resume_are_detected_independently(self):
+        self.run_case("power", "multi-event")
+
+    def test_event_at_idle_deadline_wins_over_screen_off(self):
+        self.run_case("power", "priority")
+
+    def test_busy_display_retries_event_and_times_from_success(self):
+        self.run_case("power", "retry")
+
+    def test_pending_events_coalesce_and_sequence_wrap_is_detected(self):
+        self.run_case("power", "wrap")
+
+    def test_stateless_telemetry_and_reconnect_snapshot_do_not_repeat_event(self):
+        self.run_case("power", "telemetry")
+
+    def test_event_while_lit_extends_deadline_only_once(self):
+        self.run_case("power", "lit-reset")
+
+    def test_delayed_key_wake_still_consumes_the_original_click(self):
+        self.run_case("power", "key-retry")
 
     def test_key_wake_resumes_camera_and_consumes_delayed_click(self):
         self.run_case("power", "key")

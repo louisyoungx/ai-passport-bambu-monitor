@@ -20,6 +20,7 @@
 #include "app_wifi.h"
 #include "app_mqtt.h"
 #include "app_camera.h"
+#include "app_screen_policy.h"
 #include "font_zh.h"
 #include "lvgl.h"
 #include "esp_log.h"
@@ -37,8 +38,9 @@
 
 static const char *TAG = "main";
 
-// Both boards time out after 30 seconds; CYD stays on during an active print.
-static int64_t s_key_us;
+// 空闲熄屏:30s 无按键 → 背光 0 并暂停 LVGL;任意键点亮,并吞掉唤醒它的那一次按键。
+static screen_wake_state_t s_wake_policy;
+static screen_idle_state_t s_idle_policy;
 static bool    s_screen_off;
 static bool    s_swallow_key;
 static bool    s_swallow_released;
@@ -122,28 +124,23 @@ static void screen_off_tick(void *arg)
 {
     (void)arg;
     if (s_booting) return;
-#if CONFIG_BSP_BOARD_CYD
-    bool keep_awake = app_mqtt_any_printing();
-#else
-    static bool usb_was_connected;
     bool usb_connected = bsp_battery_usb_connected();
-    if (usb_connected != usb_was_connected) {
-        usb_was_connected = usb_connected;
+    if (usb_connected != s_wake_policy.usb_connected) {
         ESP_LOGI(TAG, "USB host power=%d, screen_off=%d", usb_connected, s_screen_off);
     }
-    bool keep_awake = usb_connected && app_mqtt_any_printing();
-#endif
-    if (keep_awake) {
-        // CYD needs only an active print; Passport also needs USB power.
-        // Leaving this condition starts a new 30-second idle interval.
-        s_key_us = esp_timer_get_time();
-        screen_wake();
+    bool sleep_due = screen_idle_poll(&s_idle_policy, usb_connected,
+                                      app_mqtt_any_printing(), esp_timer_get_time());
+    if (screen_wake_poll(&s_wake_policy, usb_connected, app_mqtt_screen_wake_sequence())) {
+        // Wake wins over a simultaneous timeout. Keep the request pending if
+        // the LVGL lock is busy, and start its 30 seconds only after success.
+        if (screen_wake()) {
+            screen_wake_ack(&s_wake_policy);
+            screen_idle_activity(&s_idle_policy, esp_timer_get_time());
+            ESP_LOGI(TAG, "Screen wake event handled");
+        }
         return;
     }
-    // Power alone is not activity. All pages share the idle timeout when
-    // there is no running print, including camera and setup pages.
-    if (s_screen_off) return;
-    if (esp_timer_get_time() - s_key_us < 30LL * 1000 * 1000) return;
+    if (s_screen_off || !sleep_due) return;
     if (!bsp_lvgl_lock(200)) return;
     app_printer_set_suspended(true);
     bsp_display_backlight(0);
@@ -152,7 +149,7 @@ static void screen_off_tick(void *arg)
 #if CONFIG_PM_ENABLE
     if (s_awake_lock) esp_pm_lock_release(s_awake_lock);   // 画面已冻结,允许入睡
 #endif
-    // The input task keeps checking print state and accepts touch/key wake.
+    // Network and event checks keep running while the display is suspended.
     s_screen_off = true;
     bsp_lvgl_unlock();
     ESP_LOGI(TAG, "空闲 30s,熄屏");
@@ -160,23 +157,29 @@ static void screen_off_tick(void *arg)
 
 static void screen_off_init(void)
 {
-#if CONFIG_BSP_BOARD_CYD
-    ESP_LOGI(TAG, "CYD display policy: on while printing, idle timeout 30s");
-#endif
-    s_key_us = esp_timer_get_time();
+    screen_idle_init(&s_idle_policy, esp_timer_get_time());
+    s_wake_policy = (screen_wake_state_t){
+        .usb_connected = bsp_battery_usb_connected(),
+        .print_sequence = app_mqtt_screen_wake_sequence(),
+    };
 }
 
 // true = 这次按键只用于唤醒,不再往下处理。
 static bool screen_off_on_key(bsp_btn_ev_t ev)
 {
-    s_key_us = esp_timer_get_time();
+    screen_idle_activity(&s_idle_policy, esp_timer_get_time());
     if (s_screen_off) {
+        screen_wake_request(&s_wake_policy);
+        // Consume the entire wake gesture even if rendering resumes later
+        // through the pending-request retry rather than this callback.
+        if (ev != BSP_BTN_RELEASE) {
+            s_swallow_key = true;
+            s_swallow_released = false;
+        }
         if (screen_wake()) {
+            screen_wake_ack(&s_wake_policy);
+            screen_idle_activity(&s_idle_policy, esp_timer_get_time());
             ESP_LOGI(TAG, "按键唤醒,亮屏");
-            if (ev != BSP_BTN_RELEASE) {
-                s_swallow_key = true;
-                s_swallow_released = false;
-            }
         }
         return true;
     }

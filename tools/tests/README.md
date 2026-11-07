@@ -32,11 +32,18 @@ The firmware regression cases cover:
 - Screen idle timeout on USB and battery across inactive, paused, finished,
   failed, unknown, offline and running states; print completion and unplugging;
   activity on another configured printer; key wake and camera resume; plugging
-  in while idle remaining dark and a powered running print waking the display.
-- CYD-specific policy compiled with PM disabled: running stays awake without
-  USB detection, inactive states time out, starting a print wakes the screen,
-  and the first touch/swipe/hold only wakes it. Both profiles skip idle sleep
-  during boot. The Passport power cases are compiled separately with PM enabled.
+  in while idle waking once. The actual MQTT parser, wake event sequence, both
+  independent screen policy state machines and display callbacks are exercised
+  together. Cases cover start/finish events on both power sources, baseline and
+  duplicate reports, reconnect/stateless telemetry, another printer and resume,
+  event/timeout priority, display-lock retries, deadline reset while already lit,
+  coalesced events and sequence wrap. Display wake does not depend on sound
+  notification classification.
+
+Every screen/power case is compiled and run unchanged for Passport with PM
+enabled and CYD with PM disabled. Both use the same policy source and expected
+state transitions. Touch CLICK-before-RELEASE, hold-to-wake and boot suppression
+are also checked in both builds; there are no CYD-specific sleep exemptions.
 
 The six tests in `test_probe_camera_snapshot.py` exercise the host-side protocol
 probe separately. These checks do not replace an ESP-IDF build or real-device
