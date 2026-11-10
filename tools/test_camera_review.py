@@ -61,7 +61,12 @@ class CameraReviewTests(unittest.TestCase):
                       "WAKE": function(main, "screen_wake"), "TICK": function(main, "screen_off_tick"),
                       "KEY": function(main, "screen_off_on_key")},
             "worker": {"READER": reader, "CURRENT": function(sources["camera"], "current"),
+                       "CLOSE": function(sources["camera"], "close_camera"),
                        "STATUS": function(sources["camera"], "status"), "WORKER": function(sources["camera"], "worker")},
+            "transport": {"READER": reader, "CLOSE": function(sources["camera"], "close_camera"),
+                          "READ": function(sources["camera"], "read_bytes_inner"),
+                          "WRITE": function(sources["camera"], "write_bytes"),
+                          "FETCH": function(sources["camera"], "fetch")},
             "pin": {"READER": reader, "CURRENT": function(sources["camera"], "current"),
                     "CONNECT": function(sources["camera"], "connect_camera")},
             "topology": {"MQTT": mqtt, "REFRESH": function(sources["printer"], "refresh_all")},
@@ -71,10 +76,11 @@ class CameraReviewTests(unittest.TestCase):
                 "POST": function(sources["provision"], "camera_save_handler")},
         }
         fixtures["power_cyd"] = fixtures["power"]
+        fixtures["transport_reconnect"] = fixtures["transport"]
         fixtures["power_cyd_supply"] = {
             **fixtures["power"], "POWER_SOURCE": function(cyd_supply, "bsp_battery_external_powered")}
         for kind, replacements in fixtures.items():
-            fixture = "power" if kind.startswith("power") else kind
+            fixture = "power" if kind.startswith("power") else "transport" if kind.startswith("transport") else kind
             text = (FIXTURES / f"camera_review_{fixture}.c").read_text(encoding="utf-8")
             for key, value in replacements.items():
                 marker = f"/* @{key}@ */"
@@ -85,6 +91,8 @@ class CameraReviewTests(unittest.TestCase):
             source.write_text(text, encoding="utf-8")
             output = cls.work / (kind + (".exe" if os.name == "nt" else ""))
             flags = ["-DCONFIG_BSP_BOARD_CYD=1", "-DCONFIG_PM_ENABLE=0"] if kind.startswith("power_cyd") else []
+            if kind.startswith("transport"):
+                flags += ["-DCAMERA_REUSE_SESSION=" + ("0" if kind == "transport_reconnect" else "1")]
             result = subprocess.run(cls.cc + flags + ["-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
                 "-Wno-unused-function", "-Wno-unused-variable", "-Wno-unused-parameter", "-Wno-sign-compare",
                 "-I", str(ROOT / "main"), "-I", str(FIXTURES), str(source),
@@ -106,6 +114,22 @@ class CameraReviewTests(unittest.TestCase):
 
     def test_actual_cyd_supply_keeps_printing_awake_without_usb_detection(self):
         self.run_case("power_cyd_supply", "cyd-supply")
+
+    def test_camera_snapshot_session_is_reused_after_verified_frame(self):
+        self.run_case("transport", "reuse")
+
+    def test_camera_session_reconnects_after_request_or_decode_failure(self):
+        self.run_case("transport", "failure")
+
+    def test_camera_session_setup_failure_is_not_reused(self):
+        self.run_case("transport", "setup-failure")
+
+    def test_camera_reused_session_rejects_changed_identity_during_io(self):
+        self.run_case("transport", "identity-io")
+
+    def test_camera_reconnect_mode_and_unverified_stream_models_still_close(self):
+        self.run_case("transport_reconnect", "reconnect")
+        self.run_case("transport", "stream")
 
     def test_hold_used_to_wake_does_not_return_to_menu(self):
         self.run_case("power", "hold-order")

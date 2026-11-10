@@ -51,6 +51,12 @@ USB-host detection false, it verifies idle sleep, two hours of simulated
 RUNNING staying lit, and FINISH lighting once then timing out after 30 seconds.
 This catches treating an unavailable USB link detector as absence of supply.
 
+Camera transport cases also compile actual fetch/close/read/write functions to
+check authenticated snapshot reuse, reconnect after request/decode/setup failure,
+unchanged reconnect behavior for stream models, rejection of changed identity
+during reused-session I/O, and worker cleanup on stop/offline. Real TLS, JPEG
+decode and display speed are measured on the board, not by these I/O stubs.
+
 The six tests in `test_probe_camera_snapshot.py` exercise the host-side protocol
 probe separately. These checks do not replace an ESP-IDF build or real-device
 validation of TLS, power management and display behavior.

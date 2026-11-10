@@ -1,4 +1,18 @@
 menu "Printer camera"
+    config CAMERA_REFRESH_DELAY_MS
+        int "Delay after a verified camera snapshot (ms)"
+        range 0 10000
+        default 2000
+        help
+            This is added after transfer/decode/display time, not a frame period.
+            Failures keep their separate backoff. Manual refresh skips this delay.
+    config CAMERA_REUSE_SESSION
+        bool "Reuse authenticated TLS session for JPEG snapshots"
+        default n
+        help
+            Avoid a handshake per frame. Applies to the JPEG file-preview path;
+            stream protocol models keep their existing reconnect behavior.
+            Releases the connection on failure, page exit or printer change.
     config CAMERA_START_ON_SECOND_PAGE
         bool "Open camera page at startup (single printer, diagnostic builds)"
         default n
