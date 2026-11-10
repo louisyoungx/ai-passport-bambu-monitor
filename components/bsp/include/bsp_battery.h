@@ -25,3 +25,9 @@ int bsp_battery_mv(void);
 // This board exposes no charger-status/VBUS input. A wall charger or power bank
 // cannot be detected with this API; true does not measure battery charge current.
 bool bsp_battery_usb_connected(void);
+
+// Effective supply source for idle policy, distinct from USB link detection.
+// CYD has no battery in its board profile: running implies external power.
+// Passport uses the available USB-host signal; charger-only detection remains
+// unavailable. This does not report charging or change the lightning icon.
+bool bsp_battery_external_powered(void);

@@ -7,3 +7,7 @@ int bsp_battery_soc(void) { return -1; }
 int bsp_battery_mv(void) { return -1; }
 // The CH340 supplies UART, not native USB state; there is no charge sensor.
 bool bsp_battery_usb_connected(void) { return false; }
+
+// This externally supplied board profile has no onboard battery. No USB host
+// connection is required for external power (a wall supply is equally valid).
+bool bsp_battery_external_powered(void) { return true; }

@@ -49,11 +49,14 @@ class CameraReviewTests(unittest.TestCase):
         sources = {name: (ROOT / "main" / f"app_{name}.c").read_text(encoding="utf-8")
                    for name in ["camera", "mqtt", "printer", "config", "provision"]}
         main = (ROOT / "main/main.c").read_text(encoding="utf-8")
+        passport_supply = (ROOT / "components/bsp/src/bsp_battery.c").read_text(encoding="utf-8")
+        cyd_supply = (ROOT / "components/bsp/src/bsp_battery_cyd.c").read_text(encoding="utf-8")
         reader = re.search(r"typedef struct \{.*?\} camera_reader_t;", sources["camera"], re.S).group()
         mqtt = sources["mqtt"][sources["mqtt"].index("static void sanitize_job"):sources["mqtt"].index("static void push_pushall")]
         roster = "\n".join(function(sources["config"], name) for name in ["config_machine_count", "config_load_printers"])
         fixtures = {
             "power": {"PRINTING": function(sources["mqtt"], "app_mqtt_any_printing"),
+                      "POWER_SOURCE": function(passport_supply, "bsp_battery_external_powered"),
                       "SEQUENCE": function(sources["mqtt"], "app_mqtt_screen_wake_sequence"), "MQTT": mqtt,
                       "WAKE": function(main, "screen_wake"), "TICK": function(main, "screen_off_tick"),
                       "KEY": function(main, "screen_off_on_key")},
@@ -68,8 +71,10 @@ class CameraReviewTests(unittest.TestCase):
                 "POST": function(sources["provision"], "camera_save_handler")},
         }
         fixtures["power_cyd"] = fixtures["power"]
+        fixtures["power_cyd_supply"] = {
+            **fixtures["power"], "POWER_SOURCE": function(cyd_supply, "bsp_battery_external_powered")}
         for kind, replacements in fixtures.items():
-            fixture = "power" if kind == "power_cyd" else kind
+            fixture = "power" if kind.startswith("power") else kind
             text = (FIXTURES / f"camera_review_{fixture}.c").read_text(encoding="utf-8")
             for key, value in replacements.items():
                 marker = f"/* @{key}@ */"
@@ -79,7 +84,7 @@ class CameraReviewTests(unittest.TestCase):
             source = cls.work / f"{kind}.c"
             source.write_text(text, encoding="utf-8")
             output = cls.work / (kind + (".exe" if os.name == "nt" else ""))
-            flags = ["-DCONFIG_BSP_BOARD_CYD=1", "-DCONFIG_PM_ENABLE=0"] if kind == "power_cyd" else []
+            flags = ["-DCONFIG_BSP_BOARD_CYD=1", "-DCONFIG_PM_ENABLE=0"] if kind.startswith("power_cyd") else []
             result = subprocess.run(cls.cc + flags + ["-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
                 "-Wno-unused-function", "-Wno-unused-variable", "-Wno-unused-parameter", "-Wno-sign-compare",
                 "-I", str(ROOT / "main"), "-I", str(FIXTURES), str(source),
@@ -98,6 +103,9 @@ class CameraReviewTests(unittest.TestCase):
 
     def test_touch_click_before_release_only_wakes_first_gesture(self):
         self.run_case("power", "touch-order")
+
+    def test_actual_cyd_supply_keeps_printing_awake_without_usb_detection(self):
+        self.run_case("power_cyd_supply", "cyd-supply")
 
     def test_hold_used_to_wake_does_not_return_to_menu(self):
         self.run_case("power", "hold-order")

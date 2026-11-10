@@ -228,6 +228,10 @@ int bsp_battery_mv(void) {
     return (int)((raw * 3125) / 10000);                     // raw * 312.5uV → mV
 }
 
+bool bsp_battery_external_powered(void) {
+    return bsp_battery_usb_connected();
+}
+
 bool bsp_battery_usb_connected(void) {
     return usb_serial_jtag_is_connected();
 }

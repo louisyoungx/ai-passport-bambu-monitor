@@ -25,6 +25,7 @@ static int sounds;
 #define xSemaphoreTake(...) 1
 #define xSemaphoreGive(...) ((void)0)
 static bool bsp_battery_usb_connected(void) { return usb_connected; }
+/* @POWER_SOURCE@ */
 static bool bsp_lvgl_lock(int timeout) { return lvgl_available; }
 static void bsp_lvgl_unlock(void) {}
 static void app_printer_set_suspended(bool value) { printer_suspended = value; }
@@ -71,7 +72,17 @@ int main(int argc, char **argv) {
     const char *scenario = argv[1];
     reset();
     s_state[0].cloud = BAMBU_CLOUD_ONLINE;
-    if (!strcmp(scenario, "inactive")) {
+    if (!strcmp(scenario, "cyd-supply")) {
+        // Actual CYD BSP supply mapping, despite no native USB host detection.
+        usb_connected = s_wake_policy.usb_connected = false;
+        assert(!bsp_battery_usb_connected() && bsp_battery_external_powered());
+        report(0, "IDLE"); tick(31); assert_dark();
+        report(0, "RUNNING"); tick(32); assert_lit();
+        tick(3600); assert_lit();
+        report(0, "RUNNING"); tick(7200); assert_lit();
+        report(0, "FINISH"); tick(7201); assert_lit();
+        tick(7230); assert_lit(); tick(7231); assert_dark();
+    } else if (!strcmp(scenario, "inactive")) {
         const char *states[] = {"", "IDLE", "PAUSE", "FINISH", "FAILED", "PREPARE"};
         for (int power = 0; power <= 1; power++) {
             for (unsigned i = 0; i < sizeof(states)/sizeof(states[0]); i++) {

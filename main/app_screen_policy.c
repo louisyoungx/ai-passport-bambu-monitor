@@ -32,8 +32,8 @@ void screen_idle_activity(screen_idle_state_t *state, int64_t now_us) {
     state->idle_since_us = now_us;
 }
 
-bool screen_idle_poll(screen_idle_state_t *state, bool usb_connected, bool printing, int64_t now_us) {
-    bool protected = usb_connected && printing;
+bool screen_idle_poll(screen_idle_state_t *state, bool external_powered, bool printing, int64_t now_us) {
+    bool protected = external_powered && printing;
     if (protected != state->protected) {
         state->protected = protected;
         state->idle_since_us = now_us;

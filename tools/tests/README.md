@@ -45,6 +45,12 @@ enabled and CYD with PM disabled. Both use the same policy source and expected
 state transitions. Touch CLICK-before-RELEASE, hold-to-wake and boot suppression
 are also checked in both builds; there are no CYD-specific sleep exemptions.
 
+A separate integration case compiles the actual CYD BSP external-supply
+function with the real MQTT parser, screen callbacks and shared policy. With
+USB-host detection false, it verifies idle sleep, two hours of simulated
+RUNNING staying lit, and FINISH lighting once then timing out after 30 seconds.
+This catches treating an unavailable USB link detector as absence of supply.
+
 The six tests in `test_probe_camera_snapshot.py` exercise the host-side protocol
 probe separately. These checks do not replace an ESP-IDF build or real-device
 validation of TLS, power management and display behavior.

@@ -128,7 +128,7 @@ static void screen_off_tick(void *arg)
     if (usb_connected != s_wake_policy.usb_connected) {
         ESP_LOGI(TAG, "USB host power=%d, screen_off=%d", usb_connected, s_screen_off);
     }
-    bool sleep_due = screen_idle_poll(&s_idle_policy, usb_connected,
+    bool sleep_due = screen_idle_poll(&s_idle_policy, bsp_battery_external_powered(),
                                       app_mqtt_any_printing(), esp_timer_get_time());
     if (screen_wake_poll(&s_wake_policy, usb_connected, app_mqtt_screen_wake_sequence())) {
         // Wake wins over a simultaneous timeout. Keep the request pending if

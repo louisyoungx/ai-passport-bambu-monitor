@@ -29,4 +29,4 @@ typedef struct {
 void screen_idle_init(screen_idle_state_t *state, int64_t now_us);
 void screen_idle_activity(screen_idle_state_t *state, int64_t now_us);
 // true requests screen-off; the executor gives pending wake requests priority.
-bool screen_idle_poll(screen_idle_state_t *state, bool usb_connected, bool printing, int64_t now_us);
+bool screen_idle_poll(screen_idle_state_t *state, bool external_powered, bool printing, int64_t now_us);
