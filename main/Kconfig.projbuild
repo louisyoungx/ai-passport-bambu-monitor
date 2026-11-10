@@ -1,4 +1,18 @@
 menu "Printer camera"
+    config CAMERA_BUFFERED_PREVIEW
+        bool "Buffer fitted RGB565 preview before presenting"
+        depends on !BSP_BOARD_CYD || (!ESP_WIFI_IRAM_OPT && !ESP_WIFI_RX_IRAM_OPT)
+        default y if BSP_BOARD_CYD
+        default n
+        help
+            Decode and verify before updating the LCD in one short locked burst.
+            Uses 32-bit RAM blocks, preferring unused IRAM on ESP32; no full JPEG
+            or source-resolution RGB buffer. Disable WiFi IRAM optimizations in
+            the CYD profile to leave enough RAM for networking alongside it.
+    config CAMERA_STALE_MS
+        int "Show Loading after no verified display update (ms)"
+        range 1000 60000
+        default 5000
     config CAMERA_REFRESH_DELAY_MS
         int "Delay after a verified camera snapshot (ms)"
         range 0 10000

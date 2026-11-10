@@ -589,14 +589,16 @@ static void refresh_camera(const bambu_state_t *st) {
     default: hint = "Connecting camera..."; break;
     }
     if (camera.has_image) {
-        int age = (esp_timer_get_time()-camera.updated_us)/1000000;
-        bool stale = age > 12 || camera.status != CAMERA_READY;
-        snprintf(text, sizeof(text), stale ? "%ds old - retrying" : "%ds ago", age);
+        bool stale = camera_rate_stale(camera.updated_us, esp_timer_get_time(), CONFIG_CAMERA_STALE_MS);
+        unsigned fps = camera_rate_tenths(&camera.rate);
+        if (stale) strlcpy(text, "Loading...", sizeof(text));
+        else if (!camera.rate.count) strlcpy(text, "-- FPS", sizeof(text));
+        else snprintf(text, sizeof(text), "%u.%u FPS", fps / 10, fps % 10);
         lv_label_set_text(s_cam_age, text);
         lv_obj_set_style_text_color(s_cam_age, lv_color_hex(stale ? C_YELLOW : C_DIM), 0);
         lv_obj_add_flag(s_cam_placeholder, LV_OBJ_FLAG_HIDDEN);
     } else {
-        lv_label_set_text(s_cam_age, camera.status == CAMERA_UNCONFIGURED ? "Not configured" : "Waiting for image");
+        lv_label_set_text(s_cam_age, camera.status == CAMERA_UNCONFIGURED ? "Not configured" : "Loading...");
         lv_obj_set_style_text_color(s_cam_age, lv_color_hex(C_DIM), 0);
         lv_label_set_text(s_cam_placeholder, hint);
         lv_obj_remove_flag(s_cam_placeholder, LV_OBJ_FLAG_HIDDEN);

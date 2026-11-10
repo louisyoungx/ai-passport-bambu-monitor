@@ -19,6 +19,8 @@ idf_component_register(
          "app_camera.c"
          "app_camera_config.c"
          "camera_geometry.c"
+         "camera_frame.c"
+         "camera_rate.c"
          "app_provision.c"
          "hms_codes.c"
          "logo_bambu.c"

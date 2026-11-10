@@ -74,6 +74,11 @@ class CameraReviewTests(unittest.TestCase):
                 for name in ["hexval", "url_decode", "form_field", "json_str", "utf8_copy"]),
                 "GET": function(sources["provision"], "camera_get_handler"),
                 "POST": function(sources["provision"], "camera_save_handler")},
+            "render": {"READER": reader, "DRAW": function(sources["camera"], "draw_stripe"),
+                       "ALLOCATE": function(sources["camera"], "allocate_preview"),
+                       "PRESENT": function(sources["camera"], "present_frame"),
+                       "OUTPUT": function(sources["camera"], "jpeg_output"),
+                       "DECODE": function(sources["camera"], "decode")},
         }
         fixtures["power_cyd"] = fixtures["power"]
         fixtures["transport_reconnect"] = fixtures["transport"]
@@ -97,6 +102,8 @@ class CameraReviewTests(unittest.TestCase):
                 "-Wno-unused-function", "-Wno-unused-variable", "-Wno-unused-parameter", "-Wno-sign-compare",
                 "-I", str(ROOT / "main"), "-I", str(FIXTURES), str(source),
                 str(ROOT / "main/app_notify_transition.c"), str(ROOT / "main/app_screen_policy.c"),
+                str(ROOT / "main/camera_frame.c"), str(ROOT / "main/camera_rate.c"),
+                str(ROOT / "main/camera_geometry.c"),
                 "-o", str(output)], capture_output=True, encoding="utf-8", errors="replace")
             if result.returncode:
                 raise AssertionError(result.stdout + result.stderr)
@@ -111,6 +118,20 @@ class CameraReviewTests(unittest.TestCase):
 
     def test_touch_click_before_release_only_wakes_first_gesture(self):
         self.run_case("power", "touch-order")
+
+    def test_verified_preview_commits_complete_rgb565_and_dynamic_letterboxes(self):
+        for case in ["landscape", "portrait", "small"]:
+            self.run_case("render", case)
+
+    def test_preview_errors_and_page_cancellation_retain_previous_image(self):
+        for case in ["checksum", "cancel", "input-failure", "decode-failure", "busy", "allocation", "low-memory"]:
+            self.run_case("render", case)
+
+    def test_partial_lcd_failure_ends_stream(self):
+        self.run_case("render", "draw-failure")
+
+    def test_measured_fps_window_and_loading_deadline(self):
+        self.run_case("render", "rate")
 
     def test_actual_cyd_supply_keeps_printing_awake_without_usb_detection(self):
         self.run_case("power_cyd_supply", "cyd-supply")

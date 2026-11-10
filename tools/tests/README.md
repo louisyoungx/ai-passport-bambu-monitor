@@ -57,6 +57,17 @@ unchanged reconnect behavior for stream models, rejection of changed identity
 during reused-session I/O, and worker cleanup on stop/offline. Real TLS, JPEG
 decode and display speed are measured on the board, not by these I/O stubs.
 
+Rendering cases compile the actual JPEG output, decode and presentation functions
+with a stub JPEG producer and LCD. They verify that no pixels reach the screen
+before full decode/integrity validation, that 4:3/portrait/small sources retain
+RGB565 colors and letterboxes, and that checksum/input/decode errors, low memory,
+allocation failure, cancellation and display-lock failure retain the previous
+image. A partial LCD failure ends the stream. The real frame-buffer helpers also
+exercise odd-width packed rows, block boundaries, final partial blocks and output
+guards. Actual instruction-RAM access widths and SPI latency require board checks.
+Rate cases verify a moving window of successful presentation intervals, delayed
+frames, clock reset, and the exact five-second Loading boundary.
+
 The six tests in `test_probe_camera_snapshot.py` exercise the host-side protocol
 probe separately. These checks do not replace an ESP-IDF build or real-device
 validation of TLS, power management and display behavior.
