@@ -169,7 +169,14 @@ static bool screen_off_on_key(bsp_btn_ev_t ev)
         screen_wake_request(&s_wake_policy);
         // Consume the entire wake gesture even if rendering resumes later
         // through the pending-request retry rather than this callback.
-        if (ev != BSP_BTN_RELEASE) {
+        if (ev == BSP_BTN_CLICK || ev == BSP_BTN_DOUBLE) {
+            // The original gesture can finish before a pending wake gets
+            // the display lock. Do not consume the next independent press.
+            s_swallow_key = false;
+            s_swallow_released = false;
+        } else if (ev == BSP_BTN_RELEASE) {
+            s_swallow_released = true;
+        } else {
             s_swallow_key = true;
             s_swallow_released = false;
         }

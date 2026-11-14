@@ -13,6 +13,11 @@ $env:CC='zig cc'
 python -m unittest discover -s tools -p 'test_*.py' -v
 ```
 
+An existing Visual Studio developer shell also works with `$env:CC='cl'`.
+The runner enables MSVC's C11 atomics support and keeps generated objects in
+the temporary test directory. The Python protocol probe additionally needs
+Pillow and cryptography in the selected environment.
+
 `test_camera_review.py` compiles the actual firmware function bodies in temporary
 native C executables. Hardware, task scheduling, TLS and NVS I/O are stubbed in
 these fixtures; no duplicate parser, worker, navigation or HTTP handler logic is
@@ -29,6 +34,17 @@ The firmware regression cases cover:
   empty/example identities and NVS read failure.
 - First certificate-pin persistence failure and retry, plus rejection before
   persistence when the certificate identity is invalid or unseen.
+- Ordinary camera address/code/mode/name edits and disable/enable retain the
+  paired leaf. Only the exact re-pair flag clears it; suffix keys, longer
+  values and encoded NULs cannot opt in. The real certificate verifier rejects
+  a changed leaf after ordinary edits and accepts the existing paired leaf.
+  Missing namespaces remain configurable; failed or incomplete NVS reads never
+  expose a partial unpinned configuration or allow an ordinary save to erase it.
+- A wake gesture completed while the display lock is busy does not consume
+  the next independent press. Legacy stripe decoding retains an untouched
+  previous frame while still invalidating one changed by a clear or stripe.
+  Untouched failures also retain the displayed geometry, so the next aspect-ratio
+  change still clears its letterboxes.
 - Screen idle timeout on USB and battery across inactive, paused, finished,
   failed, unknown, offline and running states; print completion and unplugging;
   activity on another configured printer; key wake and camera resume; plugging

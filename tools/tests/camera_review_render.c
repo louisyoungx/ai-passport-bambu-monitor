@@ -56,7 +56,7 @@ static UINT jpeg_input(JDEC *decoder, BYTE *destination, UINT requested) { retur
 /* @ALLOCATE@ */
 /* @PRESENT@ */
 /* @OUTPUT@ */
-static JRESULT jd_prepare(JDEC *decoder, void *input, void *work, unsigned size, void *device) {
+static JRESULT jd_prepare(JDEC *decoder, UINT (*input)(JDEC *, BYTE *, UINT), void *work, unsigned size, void *device) {
     decoder->width = !strcmp(scenario,"portrait") ? 320 : !strcmp(scenario,"small") ? 9 : 640;
     decoder->height = !strcmp(scenario,"portrait") ? 640 : !strcmp(scenario,"small") ? 7 : 480;
     decoder->msy = 1; decoder->device = device;

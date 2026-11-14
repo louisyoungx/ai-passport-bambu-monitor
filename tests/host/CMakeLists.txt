@@ -15,7 +15,7 @@ add_executable(test_mqtt_readonly test_mqtt_readonly.c
     "${CORE_ROOT}/main/app_notify_transition.c" "${CORE_ROOT}/main/app_screen_policy.c")
 target_include_directories(test_mqtt_readonly PRIVATE stubs "${CORE_ROOT}/main" "${CJSON_DIR}")
 if(MSVC)
-    target_compile_options(test_mqtt_readonly PRIVATE /utf-8 /UNDEBUG "/FI${CMAKE_CURRENT_LIST_DIR}/stubs/compat.h")
+    target_compile_options(test_mqtt_readonly PRIVATE /utf-8 /UNDEBUG /experimental:c11atomics "/FI${CMAKE_CURRENT_LIST_DIR}/stubs/compat.h")
     target_compile_definitions(test_mqtt_readonly PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(test_mqtt_readonly PRIVATE -UNDEBUG -include "${CMAKE_CURRENT_LIST_DIR}/stubs/compat.h")

@@ -188,6 +188,15 @@ int main(int argc, char **argv) {
         report(0, "RUNNING"); tick(21); assert_lit();
         report(0, "RUNNING"); tick(40); assert_lit();
         tick(50); assert_lit(); tick(51); assert_dark();
+    } else if (!strcmp(scenario, "key-retry-completed")) {
+        tick(31); assert_dark(); lvgl_available = false;
+        assert(screen_off_on_key(BSP_BTN_PRESS));
+        assert(screen_off_on_key(BSP_BTN_RELEASE));
+        assert(screen_off_on_key(BSP_BTN_CLICK)); assert_dark();
+        lvgl_available = true; tick(32); assert_lit();
+        assert(!screen_off_on_key(BSP_BTN_PRESS));
+        assert(!screen_off_on_key(BSP_BTN_RELEASE));
+        assert(!screen_off_on_key(BSP_BTN_CLICK));
     } else if (!strcmp(scenario, "key-retry")) {
         tick(31); assert_dark(); lvgl_available = false;
         assert(screen_off_on_key(BSP_BTN_PRESS)); assert_dark();

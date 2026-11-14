@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "camera_frame.h"
+#ifdef _MSC_VER
+#include <intrin.h>
+#define __builtin_bswap16 _byteswap_ushort
+#endif
 
 // Host libc compatibility; firmware uses the ESP-IDF implementation.
 static size_t host_strlcpy(char *dst, const char *src, size_t size) {

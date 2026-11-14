@@ -1033,15 +1033,31 @@ static esp_err_t camera_get_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static bool camera_repair_requested(const char *body) {
+    // Re-pair is an explicit opt-in. Do not accept suffix keys, truncated
+    // values or encoded NULs through the general text-field decoder.
+    for (const char *field = body; *field;) {
+        const char *end = strchr(field, '&');
+        if (!end) end = field + strlen(field);
+        size_t length = (size_t)(end - field);
+        if (length >= 5 && !memcmp(field, "pair=", 5)) {
+            return (length == 6 && field[5] == '1') ||
+                   (length == 8 && !memcmp(field + 5, "%31", 3));
+        }
+        if (!*end) break;
+        field = end + 1;
+    }
+    return false;
+}
+
 static esp_err_t camera_save_handler(httpd_req_t *req) {
-    char body[512], index[8], host[64], code[34], model[100], mode[8], pair[4];
+    char body[512], index[8], host[64], code[34], model[100], mode[8];
     if (req->content_len >= sizeof(body) || read_body(req, body, sizeof(body)) < 0) return ESP_FAIL;
     form_field(body, "idx", index, sizeof(index));
     form_field(body, "host", host, sizeof(host));
     form_field(body, "code", code, sizeof(code));
     form_field(body, "model", model, sizeof(model));
     form_field(body, "mode", mode, sizeof(mode));
-    form_field(body, "pair", pair, sizeof(pair));
     if (strlen(index) != 1 || index[0] < '0' || index[0] >= '0'+CFG_MACHINE_MAX ||
         strlen(mode) != 1 || mode[0] < '0' || mode[0] > '2') {
         send_json(req, "{\"err\":\"Invalid printer or camera source\"}"); return ESP_OK;
@@ -1057,8 +1073,10 @@ static esp_err_t camera_save_handler(httpd_req_t *req) {
     const char *serial = devices.bambu_sn[index[0]-'0'];
     if (!serial[0]) { send_json(req, "{\"err\":\"Configure the printer account first\"}"); return ESP_OK; }
     camera_config_t camera;
-    camera_config_load(serial, &camera);
-    if (strcmp(host, camera.host) || (code[0] && strcmp(code, camera.access_code)) || pair[0] == '1')
+    if (!camera_config_load(serial, &camera)) {
+        send_json(req, "{\"err\":\"Camera configuration could not be read; try again\"}"); return ESP_OK;
+    }
+    if (camera_repair_requested(body))
         memset(camera.certificate_sha256, 0, sizeof(camera.certificate_sha256));
     strlcpy(camera.host, host, sizeof(camera.host));
     utf8_copy(camera.model, sizeof(camera.model), model);

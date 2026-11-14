@@ -20,18 +20,25 @@ bool camera_config_load(const char *serial, camera_config_t *out) {
     char name[16], stored[34] = {0};
     if (!namespace_for(serial, name) || nvs_flash_init() != ESP_OK) return false;
     nvs_handle_t handle;
-    if (nvs_open(name, NVS_READONLY, &handle) != ESP_OK) return false;
+    esp_err_t opened = nvs_open(name, NVS_READONLY, &handle);
+    if (opened == ESP_ERR_NVS_NOT_FOUND) return true; // A new printer has no saved trust yet.
+    if (opened != ESP_OK) return false;
+    camera_config_t loaded = {0};
     size_t n = sizeof(stored);
     bool ok = nvs_get_str(handle, "serial", stored, &n) == ESP_OK && !strcmp(stored, serial);
     if (ok) {
-        n = sizeof(out->host); nvs_get_str(handle, "host", out->host, &n);
-        n = sizeof(out->access_code); nvs_get_str(handle, "code", out->access_code, &n);
-        n = sizeof(out->model); nvs_get_str(handle, "model", out->model, &n);
-        n = sizeof(out->certificate_sha256);
-        nvs_get_blob(handle, "cert", out->certificate_sha256, &n);
-        nvs_get_u8(handle, "transport", &out->transport);
+        n = sizeof(loaded.host); ok &= nvs_get_str(handle, "host", loaded.host, &n) == ESP_OK;
+        n = sizeof(loaded.access_code); ok &= nvs_get_str(handle, "code", loaded.access_code, &n) == ESP_OK;
+        n = sizeof(loaded.model); ok &= nvs_get_str(handle, "model", loaded.model, &n) == ESP_OK;
+        n = sizeof(loaded.certificate_sha256);
+        ok &= nvs_get_blob(handle, "cert", loaded.certificate_sha256, &n) == ESP_OK &&
+              n == sizeof(loaded.certificate_sha256);
+        ok &= nvs_get_u8(handle, "transport", &loaded.transport) == ESP_OK &&
+              loaded.transport <= CAMERA_JPEG_STREAM;
     }
     nvs_close(handle);
+    // Never expose a partially read host/code with a missing certificate pin.
+    if (ok) *out = loaded;
     return ok;
 }
 

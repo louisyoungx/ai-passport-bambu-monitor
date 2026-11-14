@@ -39,7 +39,7 @@ class CameraReviewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         command = os.environ.get("CC")
-        cls.cc = shlex.split(command) if command else [shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")]
+        cls.cc = shlex.split(command) if command else [shutil.which("cc") or shutil.which("clang") or shutil.which("gcc") or shutil.which("cl")]
         if not cls.cc[0]:
             raise unittest.SkipTest("Native C compiler required (set CC)")
         cls.directory = tempfile.TemporaryDirectory(prefix="passport-camera-review-")
@@ -47,7 +47,7 @@ class CameraReviewTests(unittest.TestCase):
         cls.work = Path(cls.directory.name)
         cls.executables = {}
         sources = {name: (ROOT / "main" / f"app_{name}.c").read_text(encoding="utf-8")
-                   for name in ["camera", "mqtt", "printer", "config", "provision", "poweroff"]}
+                   for name in ["camera", "camera_config", "mqtt", "printer", "config", "provision", "poweroff"]}
         main = (ROOT / "main/main.c").read_text(encoding="utf-8")
         reader = re.search(r"typedef struct \{.*?\} camera_reader_t;", sources["camera"], re.S).group()
         mqtt = sources["mqtt"][sources["mqtt"].index("static void sanitize_job"):sources["mqtt"].index("static void push_pushall")]
@@ -73,6 +73,8 @@ class CameraReviewTests(unittest.TestCase):
                        "PRESENT": function(sources["camera"], "present_frame"),
                        "OUTPUT": function(sources["camera"], "jpeg_output"),
                        "DECODE": function(sources["camera"], "decode")},
+            "render_legacy": {"READER": reader, "DRAW": function(sources["camera"], "draw_stripe"),
+                              "DECODE": function(sources["camera"], "decode")},
             "pages": {"PAGES": function(sources["printer"], "apply_page_vis")},
             "poweroff": {"ACTIVE_JOB": function(sources["mqtt"], "app_mqtt_has_active_job"),
                          **{marker: function(sources["poweroff"], name) for marker, name in {
@@ -83,9 +85,12 @@ class CameraReviewTests(unittest.TestCase):
             "topology": {"MQTT": mqtt, "CLIENT_ID": function(sources["mqtt"], "make_client_id"),
                          "REFRESH": function(sources["printer"], "refresh_all")},
             "settings": {"ROSTER": roster, "HELPERS": "\n".join(function(sources["provision"], name)
-                for name in ["hexval", "url_decode", "form_field", "json_str", "utf8_copy"]),
+                for name in ["hexval", "url_decode", "form_field", "json_str", "utf8_copy", "camera_repair_requested"]),
+                "READER": reader, "VERIFY": function(sources["camera"], "verify_certificate"),
                 "GET": function(sources["provision"], "camera_get_handler"),
                 "POST": function(sources["provision"], "camera_save_handler")},
+            "config": {"NAMESPACE": function(sources["camera_config"], "namespace_for"),
+                       "LOAD": function(sources["camera_config"], "camera_config_load")},
         }.items():
             fixture = "transport" if kind.startswith("transport") else kind
             text = (FIXTURES / f"camera_review_{fixture}.c").read_text(encoding="utf-8")
@@ -98,13 +103,23 @@ class CameraReviewTests(unittest.TestCase):
             source.write_text(text, encoding="utf-8")
             output = cls.work / (kind + (".exe" if os.name == "nt" else ""))
             flags = ["-DCAMERA_REUSE_SESSION=" + ("0" if kind == "transport_reconnect" else "1")] if kind.startswith("transport") else []
-            result = subprocess.run(cls.cc + flags + ["-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
-                "-Wno-unused-function", "-Wno-unused-variable", "-Wno-unused-parameter", "-Wno-sign-compare",
-                "-I", str(ROOT / "main"), "-I", str(FIXTURES), str(source),
+            inputs = [str(source),
                 str(ROOT / "main/app_notify_transition.c"), str(ROOT / "main/app_screen_policy.c"),
                 str(ROOT / "main/camera_frame.c"), str(ROOT / "main/camera_rate.c"),
-                str(ROOT / "main/camera_geometry.c"),
-                "-o", str(output)], capture_output=True, encoding="utf-8", errors="replace")
+                str(ROOT / "main/camera_geometry.c")]
+            if Path(cls.cc[0]).name.lower() in ("cl", "cl.exe"):
+                options = ["/nologo", "/std:c11", "/experimental:c11atomics", "/Od", "/W4", "/WX", "/utf-8",
+                           "/D_CRT_SECURE_NO_WARNINGS", "/wd4100", "/wd4101", "/wd4189", "/wd4505",
+                           "/wd4018", "/wd4389", "/wd4244", "/wd4267", "/wd4127", "/wd4459",
+                           "/I" + str(ROOT / "main"), "/I" + str(FIXTURES)]
+                options += ["/D" + flag[2:] for flag in flags]
+                options += inputs + ["/Fe:" + str(output)]
+            else:
+                options = flags + ["-std=c11", "-O0", "-Wall", "-Wextra", "-Werror",
+                    "-Wno-unused-function", "-Wno-unused-variable", "-Wno-unused-parameter", "-Wno-sign-compare",
+                    "-I", str(ROOT / "main"), "-I", str(FIXTURES)] + inputs + ["-o", str(output)]
+            result = subprocess.run(cls.cc + options, cwd=cls.work,
+                                    capture_output=True, encoding="utf-8", errors="replace")
             if result.returncode:
                 raise AssertionError(result.stdout + result.stderr)
             cls.executables[kind] = output
@@ -142,6 +157,18 @@ class CameraReviewTests(unittest.TestCase):
 
     def test_partial_lcd_failure_ends_stream(self):
         self.run_case("render", "draw-failure")
+
+    def test_legacy_decode_failure_before_output_retains_previous_frame(self):
+        self.run_case("render_legacy", "untouched")
+
+    def test_legacy_partial_draw_failure_invalidates_previous_frame(self):
+        self.run_case("render_legacy", "partial")
+
+    def test_legacy_successful_clear_counts_as_display_write(self):
+        self.run_case("render_legacy", "clear")
+
+    def test_legacy_untouched_failure_restores_displayed_geometry_for_retry(self):
+        self.run_case("render_legacy", "retry-geometry")
 
     def test_measured_fps_window_and_loading_deadline(self):
         self.run_case("render", "rate")
@@ -223,6 +250,9 @@ class CameraReviewTests(unittest.TestCase):
     def test_delayed_key_wake_still_consumes_the_original_click(self):
         self.run_case("power", "key-retry")
 
+    def test_completed_wake_gesture_does_not_swallow_next_press(self):
+        self.run_case("power", "key-retry-completed")
+
     def test_key_wake_resumes_camera_and_consumes_delayed_click(self):
         self.run_case("power", "key")
 
@@ -264,6 +294,26 @@ class CameraReviewTests(unittest.TestCase):
 
     def test_legacy_camera_get_and_save_use_same_identity(self):
         self.run_case("settings", "legacy")
+
+    def test_ordinary_camera_edits_preserve_paired_certificate(self):
+        for case in ["pin-host", "pin-code", "pin-disable", "pin-enable", "pin-model", "pin-mode", "pin-omitted", "pin-empty"]:
+            self.run_case("settings", case)
+
+    def test_only_explicit_camera_repair_clears_certificate(self):
+        for case in ["pin-repair", "pin-repair-encoded", "pin-repair-prefix", "pin-repair-suffix",
+                     "pin-repair-value", "pin-repair-nul", "pin-repair-encoded-nul"]:
+            self.run_case("settings", case)
+
+    def test_camera_settings_do_not_overwrite_unreadable_configuration(self):
+        self.run_case("settings", "pin-load-error")
+
+    def test_camera_settings_save_failure_does_not_restart(self):
+        self.run_case("settings", "pin-save-error")
+
+    def test_camera_config_distinguishes_absent_from_unreadable_pin(self):
+        for case in ["valid", "absent", "init", "open", "serial", "identity", "host", "code",
+                     "model", "cert", "missing-cert", "short-cert", "mode", "invalid-mode"]:
+            self.run_case("config", case)
 
     def test_nvs_printer_takes_precedence(self):
         self.run_case("settings", "nvs")

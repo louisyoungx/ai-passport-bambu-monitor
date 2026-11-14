@@ -341,6 +341,7 @@ static UINT jpeg_input(JDEC *decoder, BYTE *destination, UINT requested) {
 static bool draw_stripe(camera_reader_t *r, int x, int y, int width, int height) {
     int64_t start = esp_timer_get_time();
     bool ok = bsp_lvgl_stream_draw(r->token, x, y, width, height, r->stripe);
+    if (ok) r->drew = true;
     r->draw_us += esp_timer_get_time() - start;
     r->draws++;
     return ok;
@@ -458,7 +459,6 @@ static bool decode(camera_reader_t *r) {
         } else ok = false;
     }
     if (ok && !r->buffered) {
-        r->drew = true;
         // Retain the previous frame while the next arrives. Clear only when
         // letterboxes change or no verified frame exists, avoiding black flashes.
         if (!previous_state.has_image || previous_geometry.width != r->geometry.width ||
@@ -495,6 +495,7 @@ static bool decode(camera_reader_t *r) {
         r->draw_us = esp_timer_get_time() - start;
     }
     free(r->stripe); r->stripe = NULL;
+    if (!ok && !r->drew) r->geometry = previous_geometry;
     if (!ok && r->drew && bsp_lvgl_lock(150)) { bsp_lvgl_stream_end(r->token); bsp_lvgl_unlock(); }
     return ok;
 }

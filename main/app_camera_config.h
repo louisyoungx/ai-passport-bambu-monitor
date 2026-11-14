@@ -12,5 +12,7 @@ typedef struct {
 } camera_config_t;
 
 // Per-serial namespaces preserve identity when machines are reordered.
+// A missing namespace succeeds with an empty configuration. Read errors or
+// incomplete saved records fail and leave out empty, preventing unpinned use.
 bool camera_config_load(const char *serial, camera_config_t *out);
 bool camera_config_save(const char *serial, const camera_config_t *config);
